@@ -11,7 +11,7 @@ The material has been prepared with the aim to complement the theoretical fundat
 
 ## References
 Some good textbooks that can be used to learn the fundamentals as well as being up to date with the state-of-the-art are:
- * N. S. Jayantand, P. Noll., "Digital coding of waveforms", Prentice Hall, 688 pages, 1984.
+ * N. S. Jayant and P. Noll., "Digital coding of waveforms", Prentice Hall, 688 pages, 1984.
  * A. N. Netravali, B. G. Haskell, "Digital pictures - Representation, compression, and standards", 2nd edition, Plenum Press, 686 pages, 1995.
  * D. S. Taubman, M. W. Marcellin, "JPEG2000 - Image compression fundamentals, standards and practice", Kluwer Academic Press, 773 pages, 2002.
  * D. Bull, "Communicating pictures: A course in image and video coding", Associate Press, 560 pages, 2014.
