@@ -7,7 +7,7 @@ The Video Coding Tutorial (VCT) repository provides a set of Jupyter notebooks t
  * [Transform coding](./transform-coding)
  * [Quantisation](./quantisation)
 
-The material has been prepared with the aim to complement the theoretical fundations that can be learned from some of the classical text books on image and video compression (see below for a list of references). It is believed that seeing how the theory is put into limited, yet practical examples, readers will strengthen their understanding in the area of compresison for visual data.
+The material has been prepared with the aim to complement the theoretical fundations that can be learned from some of the classical text books on image and video compression (see below for a list of references). It is believed that seeing how the theory is put into limited, yet practical examples, readers will strengthen their understanding in the area of compression of visual data.
 
 ## References
 Some good textbooks that can be used to learn the fundamentals as well as being up to date with the state-of-the-art are:
@@ -50,7 +50,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Copyright
-Copyright(c) 2021 Matteo Naccari - All Rights Reserved.
+Copyright(c) 2022 Matteo Naccari - All Rights Reserved.
 
 ## Contributing
 Feel free to submit pull requests and issue tickets with suggestions to improve, fix and expand this collection of tutorials.
