@@ -1,6 +1,5 @@
 '''
-Methods implementing different conversions from the RGB to the YCbCr
-colour spaces with primaries from different ITU-R recommendations.
+Helper functions to write bits and bytes out to a file.
 
 Copyright(c) 2022 Matteo Naccari
 All Rights Reserved.
@@ -34,25 +33,44 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-from typing import Any
+from typing import BinaryIO, List
 
 import numpy as np
-from nptyping import NDArray
 
 
-def rgb_to_ycbcr_bt601(red: NDArray[(Any, Any), np.uint8],
-                       green: NDArray[(Any, Any), np.uint8],
-                       blue: NDArray[(Any, Any), np.uint8]) -> NDArray[(Any, Any, 3), np.int32]:
-    red = red.astype(np.float64)
-    green = green.astype(np.float64)
-    blue = blue.astype(np.float64)
-    T = np.array([[0.299, 0.587, 0.114],
-                  [-0.16874, -0.33126, 0.5],
-                  [0.5, -0.41869, -0.08131]])
+class BitWriter:
+    def __init__(self, file_name: str) -> None:
+        self.accumulator: np.int32 = 0
+        self.bit_counter: np.int32 = 0
+        self.vlc_bits: np.int32 = 0
+        self.fh: BinaryIO = open(file_name, "wb")
 
-    ycbcr_image = np.zeros((red.shape[0], red.shape[1], 3), np.float64)
-    ycbcr_image[:, :, 0] = T[0, 0] * red + T[0, 1] * green + T[0, 2] * blue + 0.5
-    ycbcr_image[:, :, 1] = T[1, 0] * red + T[1, 1] * green + T[1, 2] * blue + 0.5
-    ycbcr_image[:, :, 2] = T[2, 0] * red + T[2, 1] * green + T[2, 2] * blue + 0.5
+        if not self.fh:
+            raise Exception(f"Failed to open file: {file_name}")
 
-    return ycbcr_image.astype(np.int32)
+    def write_bytes(self, values: List[np.uint8]) -> None:
+        self.fh.write(bytearray(values))
+
+    def submit_bits(self, value: int, length: int) -> None:
+        self.vlc_bits += length
+        self.bit_counter += length
+        self.accumulator <<= length
+        self.accumulator |= value
+
+        while self.bit_counter >= 8:
+            self.bit_counter -= 8
+            current_byte = np.uint8(self.accumulator >> self.bit_counter)
+            self.fh.write(current_byte)
+            self.accumulator &= (1 << self.bit_counter) - 1
+            if current_byte == 255:
+                # Marker emulation prevention
+                self.fh.write(np.uint8(0))
+
+    def flush(self) -> None:
+        self.submit_bits(127, 7)
+
+    def get_vlc_bits(self) -> int:
+        return self.vlc_bits
+
+    def terminate(self) -> None:
+        self.fh.close()

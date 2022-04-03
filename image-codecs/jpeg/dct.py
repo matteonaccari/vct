@@ -1,5 +1,5 @@
 '''
-Helper functions to apply Type-II 2D DCT over image blocks
+Helper functions to apply Type-II 2D DCT over image blocks.
 
 Copyright(c) 2022 Matteo Naccari
 All Rights Reserved.

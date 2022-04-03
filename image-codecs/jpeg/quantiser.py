@@ -1,6 +1,6 @@
 '''
 Helper functions to handle uniform quantisation of the DCT coefficients with the default tables
-reported in the JPEG standard specification: https://www.itu.int/rec/T-REC-T.81-199209-I/en
+reported in the JPEG standard specification: https://www.itu.int/rec/T-REC-T.81-199209-I/en.
 
 Copyright(c) 2022 Matteo Naccari
 All Rights Reserved.
