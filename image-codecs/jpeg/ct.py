@@ -1,6 +1,9 @@
 '''
 Methods implementing different conversions from the RGB to the YCbCr
 colour spaces with primaries from different ITU-R recommendations.
+Implemented so far is: ITU-R BT.601 an ITU-R B.709, in full range mode
+ITU-R BT.601: https://www.itu.int/rec/R-REC-BT.601/
+ITU-R BT.709: https://www.itu.int/rec/R-REC-BT.709/
 
 Copyright(c) 2022 Matteo Naccari
 All Rights Reserved.
@@ -42,17 +45,47 @@ from nptyping import NDArray
 
 def rgb_to_ycbcr_bt601(red: NDArray[(Any, Any), np.uint8],
                        green: NDArray[(Any, Any), np.uint8],
-                       blue: NDArray[(Any, Any), np.uint8]) -> NDArray[(Any, Any, 3), np.int32]:
-    red = red.astype(np.float64)
-    green = green.astype(np.float64)
-    blue = blue.astype(np.float64)
+                       blue: NDArray[(Any, Any), np.uint8], bpp: int = 8) -> NDArray[(Any, Any, 3), np.int32]:
+    max_value = (1 << bpp) - 1
+    mid_range = 1 << (bpp - 1)
+    red = red.astype(np.float64) / max_value
+    green = green.astype(np.float64) / max_value
+    blue = blue.astype(np.float64) / max_value
     T = np.array([[0.299, 0.587, 0.114],
-                  [-0.16874, -0.33126, 0.5],
-                  [0.5, -0.41869, -0.08131]])
+                  [-0.299, -0.587, 0.886],
+                  [0.701, -0.587, -0.114]])
+
+    T[1, :] /= 1.772
+    T[2, :] /= 1.402
 
     ycbcr_image = np.zeros((red.shape[0], red.shape[1], 3), np.float64)
-    ycbcr_image[:, :, 0] = T[0, 0] * red + T[0, 1] * green + T[0, 2] * blue + 0.5
-    ycbcr_image[:, :, 1] = T[1, 0] * red + T[1, 1] * green + T[1, 2] * blue + 0.5
-    ycbcr_image[:, :, 2] = T[2, 0] * red + T[2, 1] * green + T[2, 2] * blue + 0.5
+    ycbcr_image[:, :, 0] = max_value * (T[0, 0] * red + T[0, 1] * green + T[0, 2] * blue)
+    ycbcr_image[:, :, 1] = max_value * (T[1, 0] * red + T[1, 1] * green + T[1, 2] * blue) + mid_range
+    ycbcr_image[:, :, 2] = max_value * (T[2, 0] * red + T[2, 1] * green + T[2, 2] * blue) + mid_range
+    ycbcr_image = np.clip(ycbcr_image + 0.5, 0, max_value)
+
+    return ycbcr_image.astype(np.int32)
+
+
+def rgb_to_ycbcr_bt709(red: NDArray[(Any, Any), np.uint8],
+                       green: NDArray[(Any, Any), np.uint8],
+                       blue: NDArray[(Any, Any), np.uint8], bpp: int = 8) -> NDArray[(Any, Any, 3), np.int32]:
+    max_value = (1 << bpp) - 1
+    mid_range = 1 << (bpp - 1)
+    red = red.astype(np.float64) / max_value
+    green = green.astype(np.float64) / max_value
+    blue = blue.astype(np.float64) / max_value
+    T = np.array([[0.2126, 0.7152, 0.0722],
+                  [-0.2126, -0.7152, 0.9278],
+                  [0.7874, -0.7152, -0.0722]])
+
+    T[1, :] /= 1.8556
+    T[2, :] /= 1.5748
+
+    ycbcr_image = np.zeros((red.shape[0], red.shape[1], 3), np.float64)
+    ycbcr_image[:, :, 0] = max_value * (T[0, 0] * red + T[0, 1] * green + T[0, 2] * blue)
+    ycbcr_image[:, :, 1] = max_value * (T[1, 0] * red + T[1, 1] * green + T[1, 2] * blue) + mid_range
+    ycbcr_image[:, :, 2] = max_value * (T[2, 0] * red + T[2, 1] * green + T[2, 2] * blue) + mid_range
+    ycbcr_image = np.clip(ycbcr_image + 0.5, 0, max_value)
 
     return ycbcr_image.astype(np.int32)

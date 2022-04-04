@@ -43,7 +43,7 @@ from typing import Any, Tuple
 import cv2
 import numpy as np
 from bit_io import BitWriter
-from ct import rgb_to_ycbcr_bt601
+from ct import rgb_to_ycbcr_bt709
 from dct import compute_dct, compute_dct_matrix
 from entropy import (chroma_ac_bits, chroma_ac_values, chroma_dc_bits,
                      chroma_dc_values, encode_block, expand_huffman_table,
@@ -86,8 +86,8 @@ def jpeg_encoding(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_name:
             col_slice = slice(c, c + 8)
             block = input_image8[row_slice, col_slice].astype(np.float64)
             block_t[:, :, 0] = compute_dct(block[:, :, 0] - 128, T)
-            block_t[:, :, 1] = compute_dct(block[:, :, 1], T)
-            block_t[:, :, 2] = compute_dct(block[:, :, 2], T)
+            block_t[:, :, 1] = compute_dct(block[:, :, 1] - 128, T)
+            block_t[:, :, 2] = compute_dct(block[:, :, 2] - 128, T)
             image_dct_q[row_slice, col_slice] = np.divide(block_t + 0.5, qm).astype(np.int32)
 
     # Loop again over all 8x8 blocks to perform entropy coding
@@ -124,11 +124,22 @@ def jpeg_encoding(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_name:
 
     # Write the VLC payload
     for payload_y, payload_cb, payload_cr in zip(y_cw, cb_cw, cr_cw):
-        for code in payload_y:
+        # Y
+        for code in payload_y["DC"]:
             bw.submit_bits(code[0], code[1])
-        for code in payload_cb:
+        for code in payload_y["AC"]:
             bw.submit_bits(code[0], code[1])
-        for code in payload_cr:
+
+        # Cb
+        for code in payload_cb["DC"]:
+            bw.submit_bits(code[0], code[1])
+        for code in payload_cb["AC"]:
+            bw.submit_bits(code[0], code[1])
+
+        # Cr
+        for code in payload_cr["DC"]:
+            bw.submit_bits(code[0], code[1])
+        for code in payload_cr["AC"]:
             bw.submit_bits(code[0], code[1])
 
     bw.flush()
@@ -178,7 +189,7 @@ if __name__ == "__main__":
         input_image = cv2.imread(args.input, cv2.IMREAD_UNCHANGED).astype(np.uint8)
         rows, cols = input_image.shape[0], input_image.shape[1]
         red, green, blue = input_image[:, :, 2], input_image[:, :, 1], input_image[:, :, 0]
-        input_image = rgb_to_ycbcr_bt601(red, green, blue)
+        input_image = rgb_to_ycbcr_bt709(red, green, blue)
 
     # Print encoding parameters
     header_str = "Video coding tutorial - Python implementation of a JPEG encoder"

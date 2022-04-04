@@ -34,7 +34,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-from typing import Any, List, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
 from nptyping import NDArray
@@ -139,8 +139,9 @@ def get_zigzag_scan(block_size: int) -> Tuple[NDArray[(Any, Any), np.uint8], NDA
     return scan_idx, scan_idx_inv
 
 
-def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(256, 2), np.int32], ach: NDArray[(256, 2), np.int32]) -> List[int]:
+def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(256, 2), np.int32], ach: NDArray[(256, 2), np.int32]) -> Dict:
     res_dc = block[0] - pred_dc
+    cw_dict = {}
     cw_list = []
 
     # Determine the codewords for the DC coefficient
@@ -155,6 +156,9 @@ def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(25
         cw_list.append([dch[res_dc_category, 0], dch[res_dc_category, 1]])
         flc = (1 << res_dc_category) - 1 + res_dc if res_dc < 0 else res_dc
         cw_list.append([flc, res_dc_category])
+
+    cw_dict["DC"] = cw_list
+    cw_list = []
 
     # Find the position of the last significant coefficient
     idx = np.where(block[-1:0:-1] != 0)
@@ -184,4 +188,6 @@ def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(25
     if last_sig_coeff != 63:
         cw_list.append([ach[0, 0], ach[0, 1]])
 
-    return cw_list
+    cw_dict["AC"] = cw_list
+
+    return cw_dict
