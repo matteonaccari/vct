@@ -164,9 +164,9 @@ def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(25
     idx = np.where(block[-1:0:-1] != 0)
     last_sig_coeff = 63 - idx[0][0] if len(idx[0]) else 0
 
-    # Run-length encoding with alphabet extension of the run-length value pairs.
+    # Run length encoding with alphabet extension of the run length value pairs.
     # The length of the run is packed in the MSBs of a 8 bit codeword, hence it cannot exceed the value 15.
-    # When this happens, the special codeword 240 = 15 << 4 is written in the bitstream and the run-length is reset.
+    # When this happens, the special codeword 240 = 15 << 4 is written in the bitstream and the run length is reset.
     # The LSBs of the codeword carry the category of the significant coefficient. Remainder bits are written as for the DC's case.
     # If the last significant coefficient is different from 63, the End Of Block (EOB) codeword is written, i.e. 0
     run_length = 0
