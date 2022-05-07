@@ -6,6 +6,7 @@ The Video Coding Tutorial (VCT) repository provides a set of Jupyter notebooks t
  * [Entropy coding](./entropy-coding)
  * [Transform coding](./transform-coding)
  * [Quantisation](./quantisation)
+ * [Image codecs](./image-codecs/)
 
 The material has been prepared with the aim to complement the theoretical fundations that can be learned from some of the classical text books on image and video compression (see below for a list of references). It is believed that seeing how the theory is put into limited, yet practical examples, readers will strengthen their understanding in the area of compression of visual data.
 
