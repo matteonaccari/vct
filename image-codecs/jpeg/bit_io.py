@@ -52,6 +52,8 @@ class BitWriter:
         self.fh.write(bytearray(values))
 
     def submit_bits(self, value: int, length: int) -> None:
+        if length < 0:
+            raise Exception(f"Negative length value ({length}) detected")
         self.vlc_bits += length
         self.bit_counter += length
         self.accumulator <<= length

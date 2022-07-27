@@ -34,7 +34,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from nptyping import NDArray
@@ -191,3 +191,141 @@ def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(25
     cw_dict["AC"] = cw_list
 
     return cw_dict
+
+
+def get_block_symbols(block: NDArray[(Any, Any), np.int32], pred_dc) -> Tuple[int, List[int]]:
+    res_dc = block[0] - pred_dc
+
+    # Determine the category for the DC coefficient
+    if not res_dc:
+        dc_sym = 0
+    else:
+        dc_sym = int(np.ceil(np.log2(np.abs(res_dc) + 1)))
+
+    # Find the position of the last significant coefficient
+    idx = np.where(block[-1:0:-1] != 0)
+    last_sig_coeff = 63 - idx[0][0] if len(idx[0]) else 0
+
+    # Determine the run length value pairs using alphabet extension.
+    # The length of the run is packed in the MSBs of a 8 bit number, hence it cannot exceed the value 15.
+    # When this happens, the special symbol 240 = 15 << 4 is used.
+    # The LSBs of the symbol carry the category of the significant coefficient.
+    # If the last significant coefficient is different from 63, the End Of Block (EOB) symbol is also added (i.e. 0)
+    ac_sym = []
+    run_length = 0
+    i = 1
+    while i <= last_sig_coeff:
+        while not block[i]:
+            run_length += 1
+            if run_length > 15:
+                ac_sym.append(15 << 4)
+                run_length = 0
+            i += 1
+        ac_category = int(np.ceil(np.log2(np.abs(block[i]) + 1)))
+        rlv_pair = (run_length << 4) | ac_category
+        ac_sym.append(rlv_pair)
+        run_length = 0
+        i += 1
+    if last_sig_coeff != 63:
+        ac_sym.append(0)
+
+    return dc_sym, ac_sym
+
+
+def limit_codewords_length(bits_array: NDArray[(32), np.int32]) -> NDArray[(32), np.int32]:
+    i = 32
+    while i > 16:
+        while(bits_array[i] > 0):
+            j = i - 2
+            while (bits_array[j] == 0):
+                j -= 1
+            bits_array[i] -= 2
+            bits_array[i - 1] += 1
+            bits_array[j + 1] += 2
+            bits_array[j] -= 1
+        i -= 1
+
+    while bits_array[i] == 0:
+        i -= 1
+    bits_array[i] -= 1
+    return bits_array
+
+
+def derive_huffman_table(freq: NDArray[(257), np.int32]) -> Tuple[NDArray[(33), np.int32], NDArray[(257), np.int32]]:
+    code_size = np.zeros((257), np.int32)
+    others = -1 * np.ones((257), np.int32)
+
+    while True:
+        # Find V1 for least value of freq(V1) > 0
+        min_value = np.iinfo(np.int32).max
+        v1 = -1
+        for idx, entry in enumerate(freq):
+            if entry and entry <= min_value:
+                min_value = entry
+                v1 = idx
+
+        # Find V2 for next least value of freq(V2) > 0
+        min_value = np.iinfo(np.int32).max
+        v2 = -1
+        for idx, entry in enumerate(freq):
+            if entry and entry <= min_value and idx != v1:
+                min_value = entry
+                v2 = idx
+
+        if v2 == -1:
+            break
+
+        freq[v1] += freq[v2]
+        freq[v2] = 0
+
+        code_size[v1] += 1
+
+        while others[v1] != -1:
+            v1 = others[v1]
+            code_size[v1] += 1
+
+        others[v1] = v2
+        code_size[v2] += 1
+
+        while others[v2] != -1:
+            v2 = others[v2]
+            code_size[v2] += 1
+
+    # Find the bits array
+    bits = np.zeros((33), np.int32)
+    for entry in code_size:
+        if entry:
+            bits[entry] += 1
+
+    return bits, code_size
+
+
+def sort_input(code_size: NDArray[(257), np.int32]) -> NDArray[(Any), np.int32]:
+    values = []
+    for i in range(1, 33):
+        for idx in range(256):
+            if code_size[idx] == i:
+                values.append(idx)
+
+    return np.array(values, np.int32)
+
+
+def design_huffman_table(symbols: List[int]) -> Tuple[NDArray[(32), np.int32], NDArray[(Any), np.int32]]:
+    # Declaration of arrays freq, others and code_size
+    frequency_table = np.zeros((257), np.int32)
+    frequency_table[-1] = 1
+
+    # Derive the frequency table
+    for s in symbols:
+        frequency_table[s] += 1
+
+    # Derive the Huffman code as bits array
+    bits, code_size = derive_huffman_table(frequency_table)
+
+    # Limit the length of codewords to 16 bits (if needed)
+    bits = limit_codewords_length(bits)
+
+    # Sort the input
+    values = sort_input(code_size)
+
+    return bits[1:17], np.array(values, np.int32)
