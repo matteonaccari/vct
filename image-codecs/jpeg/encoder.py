@@ -104,9 +104,9 @@ def jpeg_encoding(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_name:
             block_cb = image_dct_q[row_slice, col_slice, 1].flatten()
             block_cr = image_dct_q[row_slice, col_slice, 2].flatten()
 
-            y_cw[block_idx] = encode_block(block_y[zigzag_idx], dcp_y, luma_dc_table, luma_ac_table)
-            cb_cw[block_idx] = encode_block(block_cb[zigzag_idx], dcp_cb, chroma_dc_table, chroma_ac_table)
-            cr_cw[block_idx] = encode_block(block_cr[zigzag_idx], dcp_cr, chroma_dc_table, chroma_ac_table)
+            y_cw[block_idx], _ = encode_block(block_y[zigzag_idx], dcp_y, luma_dc_table, luma_ac_table)
+            cb_cw[block_idx], _ = encode_block(block_cb[zigzag_idx], dcp_cb, chroma_dc_table, chroma_ac_table)
+            cr_cw[block_idx], _ = encode_block(block_cr[zigzag_idx], dcp_cr, chroma_dc_table, chroma_ac_table)
 
             dcp_y, dcp_cb, dcp_cr = block_y[0], block_cb[0], block_cr[0]
             block_idx += 1

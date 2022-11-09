@@ -1,7 +1,7 @@
 '''
 Methods implementing image compression as specified in the
 JPEG standard: https://www.itu.int/rec/T-REC-T.81-199209-I/en
-with optimised Huffman tables for entropy encoding
+with the addition of Rate Distortion Optimised Quantisation (RDOQ).
 
 Copyright(c) 2022 Matteo Naccari
 All Rights Reserved.
@@ -43,23 +43,36 @@ from typing import Any, Tuple
 
 import cv2
 import numpy as np
-from nptyping import NDArray
-
 from bit_io import BitWriter
 from ct import rgb_to_ycbcr_bt709
 from dct import compute_dct, compute_dct_matrix
-from entropy import (design_huffman_table, encode_block, expand_huffman_table,
-                     get_block_symbols, get_zigzag_scan)
-from quantiser import compute_quantisation_matrices
+from entropy import (chroma_ac_bits, chroma_ac_values, chroma_dc_bits,
+                     chroma_dc_values, encode_block, expand_huffman_table,
+                     get_zigzag_scan, luma_ac_bits, luma_ac_values,
+                     luma_dc_bits, luma_dc_values)
+from nptyping import NDArray
+from quantiser import compute_quantisation_matrices, rdoq_8x8_plane
 from syntax import (write_comment, write_huffman_table, write_jfif_header,
                     write_quantisation_tables, write_segment_marker,
                     write_start_of_frame, write_start_of_scan)
 
 
-def jpeg_encoding_ht_opt(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_name: str, quality: int) -> Tuple[int, int]:
+def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_name: str, quality: int) -> Tuple[int, int]:
     qy, qc = compute_quantisation_matrices(quality)
     qm = np.dstack((qy, qc, qc)).astype(np.float64)
     _, zigzag_scan = get_zigzag_scan(8)
+
+    # Compute the Lagrange multiplier
+    lambda_y = 0.85 * np.mean(qy)**2
+    lambda_c = 0.85 * np.mean(qc)**2
+
+    # Luma Huffman table generation
+    luma_dc_table = expand_huffman_table(luma_dc_bits, luma_dc_values)
+    luma_ac_table = expand_huffman_table(luma_ac_bits, luma_ac_values)
+
+    # Chroma Huffman table generation
+    chroma_dc_table = expand_huffman_table(chroma_dc_bits, chroma_dc_values)
+    chroma_ac_table = expand_huffman_table(chroma_ac_bits, chroma_ac_values)
 
     # Pad the input image to make its dimensions a multiple of 8
     rows, cols = input_image.shape[0], input_image.shape[1]
@@ -69,8 +82,11 @@ def jpeg_encoding_ht_opt(input_image: NDArray[(Any, Any, 3), np.uint8], bitstrea
     # Compute the DCT matrix
     T = compute_dct_matrix(8)
 
-    # Loop over all 8x8 blocks, compute the 2D DCT and quantise the transform coefficients
+    # Loop over all 8x8 blocks, compute the 2D DCT and quantise the transform coefficients using RDOQ
+    dcp_y, dcp_cb, dcp_cr = 0, 0, 0
+    zigzag_idx = zigzag_scan.flatten()
     image_dct_q = np.zeros(input_image8.shape, np.int32)
+    image_rd_cost = np.zeros((rows8 >> 3, cols8 >> 3), np.float64)
     block_t = np.zeros((8, 8, 3), np.float64)
     for r in range(0, rows8, 8):
         row_slice = slice(r, r + 8)
@@ -80,58 +96,21 @@ def jpeg_encoding_ht_opt(input_image: NDArray[(Any, Any, 3), np.uint8], bitstrea
             block_t[:, :, 0] = compute_dct(block[:, :, 0] - 128, T)
             block_t[:, :, 1] = compute_dct(block[:, :, 1] - 128, T)
             block_t[:, :, 2] = compute_dct(block[:, :, 2] - 128, T)
-            image_dct_q[row_slice, col_slice] = np.divide(block_t + 0.5, qm).astype(np.int32)
 
-    # Collect all symbols associated with DC and AC coefficients so that Huffman coding tables can be designed
-    zigzag_idx = zigzag_scan.flatten()
+            image_dct_q[row_slice, col_slice, 0], cost_y = rdoq_8x8_plane(block_t[:, :, 0], qm[:, :, 0], luma_dc_table, luma_ac_table, lambda_y, zigzag_idx, dcp_y)
+            image_dct_q[row_slice, col_slice, 1], cost_cb = rdoq_8x8_plane(block_t[:, :, 1], qm[:, :, 1], chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, dcp_cb)
+            image_dct_q[row_slice, col_slice, 2], cost_cr = rdoq_8x8_plane(block_t[:, :, 2], qm[:, :, 2], chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, dcp_cr)
+            image_rd_cost[r >> 3, c >> 3] = cost_y + cost_cb + cost_cr
+            dcp_y = image_dct_q[r, c, 0]
+            dcp_cb = image_dct_q[r, c, 1]
+            dcp_cr = image_dct_q[r, c, 2]
+
+    # Loop again over all 8x8 blocks to perform entropy coding
     total_blocks = rows8 * cols8 // 64
-    dcp_y, dcp_cb, dcp_cr = 0, 0, 0
-    sym_dc_y, sym_dc_c = [], []
-    sym_ac_y, sym_ac_c = [], []
-    for r in range(0, rows8, 8):
-        row_slice = slice(r, r + 8)
-        for c in range(0, cols8, 8):
-            col_slice = slice(c, c + 8)
-            block_y = image_dct_q[row_slice, col_slice, 0].flatten()
-            block_cb = image_dct_q[row_slice, col_slice, 1].flatten()
-            block_cr = image_dct_q[row_slice, col_slice, 2].flatten()
-
-            # Y
-            sym_dc, sym_ac = get_block_symbols(block_y[zigzag_idx], dcp_y)
-            sym_dc_y.append(sym_dc)
-            sym_ac_y.extend(sym_ac)
-
-            # Cb
-            sym_dc, sym_ac = get_block_symbols(block_cb[zigzag_idx], dcp_cb)
-            sym_dc_c.append(sym_dc)
-            sym_ac_c.extend(sym_ac)
-
-            # Cr
-            sym_dc, sym_ac = get_block_symbols(block_cr[zigzag_idx], dcp_cr)
-            sym_dc_c.append(sym_dc)
-            sym_ac_c.extend(sym_ac)
-
-            dcp_y, dcp_cb, dcp_cr = block_y[0], block_cb[0], block_cr[0]
-
-    # Design Huffman tables
-    bits_dc_y, values_dc_y = design_huffman_table(sym_dc_y)
-    bits_ac_y, values_ac_y = design_huffman_table(sym_ac_y)
-    bits_dc_c, values_dc_c = design_huffman_table(sym_dc_c)
-    bits_ac_c, values_ac_c = design_huffman_table(sym_ac_c)
-
-    # Expand the new tables designed
-    # Luma Huffman table generation
-    luma_dc_table = expand_huffman_table(bits_dc_y, values_dc_y)
-    luma_ac_table = expand_huffman_table(bits_ac_y, values_ac_y)
-
-    # Chroma Huffman table generation
-    chroma_dc_table = expand_huffman_table(bits_dc_c, values_dc_c)
-    chroma_ac_table = expand_huffman_table(bits_ac_c, values_ac_c)
-
-    # Perform entropy coding with the new Huffman tables designed
     dcp_y, dcp_cb, dcp_cr = 0, 0, 0
     block_idx = 0
     y_cw, cb_cw, cr_cw = [None] * total_blocks, [None] * total_blocks, [None] * total_blocks
+
     for r in range(0, rows8, 8):
         row_slice = slice(r, r + 8)
         for c in range(0, cols8, 8):
@@ -151,11 +130,11 @@ def jpeg_encoding_ht_opt(input_image: NDArray[(Any, Any, 3), np.uint8], bitstrea
     # Start with the high level syntax metadata
     bw = BitWriter(bitstream_name)
     write_jfif_header(bw)
-    write_comment(bw, "VCT JPEG encoder in Python with optimised Huffman tables")
+    write_comment(bw, "VCT JPEG encoder in Python")
     write_quantisation_tables(bw, qy.flatten()[zigzag_idx], qc.flatten()[zigzag_idx])
     write_start_of_frame(bw, rows, cols)
-    write_huffman_table(bw, bits_dc_y, values_dc_y, bits_ac_y, values_ac_y,
-                        bits_dc_c, values_dc_c, bits_ac_c, values_ac_c)
+    write_huffman_table(bw, luma_dc_bits, luma_dc_values, luma_ac_bits, luma_ac_values,
+                        chroma_dc_bits, chroma_dc_values, chroma_ac_bits, chroma_ac_values)
     write_start_of_scan(bw)
 
     # Write the VLC payload
@@ -228,7 +207,7 @@ if __name__ == "__main__":
         input_image = rgb_to_ycbcr_bt709(red, green, blue)
 
     # Print encoding parameters
-    header_str = "Video coding tutorial - Python implementation of a JPEG encoder with optimised Huffman tables"
+    header_str = "Video coding tutorial - Python implementation of a JPEG encoder"
     print("-" * len(header_str))
     print(header_str)
     print(f"Input image: {args.input} - {cols}x{rows}")
@@ -237,7 +216,7 @@ if __name__ == "__main__":
 
     # Call the encoder
     start = time.time()
-    total_bytes, vlc_bits = jpeg_encoding_ht_opt(input_image, args.output, args.quality)
+    total_bytes, vlc_bits = jpeg_encoding_rdoq(input_image, args.output, args.quality)
     stop = time.time()
 
     # Print final stats

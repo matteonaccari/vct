@@ -139,7 +139,7 @@ def get_zigzag_scan(block_size: int) -> Tuple[NDArray[(Any, Any), np.uint8], NDA
     return scan_idx, scan_idx_inv
 
 
-def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(256, 2), np.int32], ach: NDArray[(256, 2), np.int32]) -> Dict:
+def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(256, 2), np.int32], ach: NDArray[(256, 2), np.int32]) -> Tuple[Dict, int]:
     res_dc = block[0] - pred_dc
     cw_dict = {}
     cw_list = []
@@ -147,6 +147,7 @@ def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(25
     # Determine the codewords for the DC coefficient
     if not res_dc:
         cw_list.append([dch[0, 0], dch[0, 1]])
+        rate = dch[0, 1]
     else:
         # Find the minimum number of bits required to represent the DC residual (i.e. the category)
         # VLC the category value with the Huffman table whilst use Fixed Length Coding (FLC) for the
@@ -154,8 +155,10 @@ def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(25
         # v > 0 -> 1
         res_dc_category = int(np.ceil(np.log2(np.abs(res_dc) + 1)))
         cw_list.append([dch[res_dc_category, 0], dch[res_dc_category, 1]])
+        rate = dch[res_dc_category, 1]
         flc = (1 << res_dc_category) - 1 + res_dc if res_dc < 0 else res_dc
         cw_list.append([flc, res_dc_category])
+        rate += res_dc_category
 
     cw_dict["DC"] = cw_list
     cw_list = []
@@ -176,6 +179,7 @@ def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(25
             run_length += 1
             if run_length > 15:
                 cw_list.append([ach[15 << 4, 0], ach[15 << 4, 1]])
+                rate += ach[15 << 4, 1]
                 run_length = 0
             i += 1
         ac_category = int(np.ceil(np.log2(np.abs(block[i]) + 1)))
@@ -183,14 +187,16 @@ def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(25
         cw_list.append([ach[rlv_pair, 0], ach[rlv_pair, 1]])
         flc = (1 << ac_category) - 1 + block[i] if block[i] < 0 else block[i]
         cw_list.append([flc, ac_category])
+        rate += ach[rlv_pair, 1] + ac_category
         run_length = 0
         i += 1
     if last_sig_coeff != 63:
         cw_list.append([ach[0, 0], ach[0, 1]])
+        rate += ach[0, 1]
 
     cw_dict["AC"] = cw_list
 
-    return cw_dict
+    return cw_dict, rate
 
 
 def get_block_symbols(block: NDArray[(Any, Any), np.int32], pred_dc) -> Tuple[int, List[int]]:

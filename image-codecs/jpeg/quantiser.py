@@ -60,10 +60,56 @@ chroma_quantisation_matrix = np.array([[17, 18, 24, 47, 99, 99, 99, 99],
 
 
 def compute_quantisation_matrices(quality: int) -> Tuple[NDArray[(8, 8), np.int32], NDArray[(8, 8), np.int32]]:
-    # Adjust the quality value according to the relationship worked out by the ???
+    # Adjust the quality value according to the relationship worked out by the Indipendent JPEG Group (IJG)
     quality = 5000 // quality if quality < 50 else 200 - quality * 2
 
     q_luma = np.clip((luma_quantisation_matrix * quality + 50) // 100, 1, 255)
-    q_chroma = np.clip((chroma_quantisation_matrix * quality + 50) // 100, 1, 255)
+    q_chroma = np.clip((chroma_quantisation_matrix *
+                       quality + 50) // 100, 1, 255)
 
     return q_luma, q_chroma
+
+
+def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8), np.float64],
+                   table_dc: NDArray[(256, 2), np.int32], table_ac: NDArray[(256, 2), np.int32],
+                   _lambda: float, zz_idx: NDArray[(8, 8), np.uint8], pred_dc: int) -> Tuple[NDArray[(8, 8), np.int32], float]:
+    # Regular quantisation
+    levels = np.divide(coefficients + 0.5, qm).astype(np.int32)
+
+    # Find distortion in the quantised domain
+    coeff_rec = np.multiply(levels, qm.astype(np.int32))
+    distortion = np.sum(np.square(coefficients - coeff_rec.astype(np.float64)))
+
+    # Compute the rate for the DC coefficient
+    res_dc = levels[0, 0] - pred_dc
+    if not res_dc:
+        rate = table_dc[0, 1]
+    else:
+        res_dc_category = int(np.ceil(np.log2(np.abs(res_dc) + 1)))
+        rate = table_dc[res_dc_category, 1] + res_dc_category
+
+    # Find the eob and perform AC coefficients rate calculation
+    levels_zz = levels.flatten()[zz_idx]
+    idx = np.where(levels_zz[-1:0:-1] != 0)
+    last_sig_coeff = 63 - idx[0][0] if len(idx[0]) else 0
+
+    run_length = 0
+    i = 1
+    while i <= last_sig_coeff:
+        while not levels_zz[i]:
+            run_length += 1
+            if run_length > 15:
+                rate += table_ac[15 << 4, 1]
+                run_length = 0
+            i += 1
+        ac_category = int(np.ceil(np.log2(np.abs(levels_zz[i]) + 1)))
+        rlv_pair = (run_length << 4) | ac_category
+        rate += table_ac[rlv_pair, 1] + ac_category
+        run_length = 0
+        i += 1
+
+    if last_sig_coeff != 63:
+        rate += table_ac[0, 1]
+
+    rd_cost = distortion + _lambda * rate
+    return levels, rd_cost
