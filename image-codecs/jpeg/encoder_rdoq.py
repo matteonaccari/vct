@@ -78,6 +78,7 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
     rows, cols = input_image.shape[0], input_image.shape[1]
     rows8, cols8 = ((rows + 7) >> 3) << 3, ((cols + 7) >> 3) << 3
     input_image8 = np.pad(input_image, ((0, rows8 - rows), (0, cols8 - cols), (0, 0)), "edge")
+    image_dct = np.zeros((rows, cols8, 3), np.float64)
 
     # Compute the DCT matrix
     T = compute_dct_matrix(8)
@@ -87,19 +88,18 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
     zigzag_idx = zigzag_scan.flatten()
     image_dct_q = np.zeros(input_image8.shape, np.int32)
     image_rd_cost = np.zeros((rows8 >> 3, cols8 >> 3), np.float64)
-    block_t = np.zeros((8, 8, 3), np.float64)
     for r in range(0, rows8, 8):
         row_slice = slice(r, r + 8)
         for c in range(0, cols8, 8):
             col_slice = slice(c, c + 8)
             block = input_image8[row_slice, col_slice].astype(np.float64)
-            block_t[:, :, 0] = compute_dct(block[:, :, 0] - 128, T)
-            block_t[:, :, 1] = compute_dct(block[:, :, 1] - 128, T)
-            block_t[:, :, 2] = compute_dct(block[:, :, 2] - 128, T)
+            image_dct[row_slice, col_slice, 0] = compute_dct(block[:, :, 0] - 128, T)
+            image_dct[row_slice, col_slice, 1] = compute_dct(block[:, :, 1] - 128, T)
+            image_dct[row_slice, col_slice, 2] = compute_dct(block[:, :, 2] - 128, T)
 
-            image_dct_q[row_slice, col_slice, 0], cost_y = rdoq_8x8_plane(block_t[:, :, 0], qm[:, :, 0], luma_dc_table, luma_ac_table, lambda_y, zigzag_idx, dcp_y)
-            image_dct_q[row_slice, col_slice, 1], cost_cb = rdoq_8x8_plane(block_t[:, :, 1], qm[:, :, 1], chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, dcp_cb)
-            image_dct_q[row_slice, col_slice, 2], cost_cr = rdoq_8x8_plane(block_t[:, :, 2], qm[:, :, 2], chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, dcp_cr)
+            image_dct_q[row_slice, col_slice, 0], cost_y = rdoq_8x8_plane(image_dct[row_slice, col_slice, 0], qm[:, :, 0], luma_dc_table, luma_ac_table, lambda_y, zigzag_idx, dcp_y)
+            image_dct_q[row_slice, col_slice, 1], cost_cb = rdoq_8x8_plane(image_dct[row_slice, col_slice, 1], qm[:, :, 1], chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, dcp_cb)
+            image_dct_q[row_slice, col_slice, 2], cost_cr = rdoq_8x8_plane(image_dct[row_slice, col_slice, 2], qm[:, :, 2], chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, dcp_cr)
             image_rd_cost[r >> 3, c >> 3] = cost_y + cost_cb + cost_cr
             dcp_y = image_dct_q[r, c, 0]
             dcp_cb = image_dct_q[r, c, 1]
@@ -119,9 +119,21 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
             block_cb = image_dct_q[row_slice, col_slice, 1].flatten()
             block_cr = image_dct_q[row_slice, col_slice, 2].flatten()
 
-            y_cw[block_idx], _ = encode_block(block_y[zigzag_idx], dcp_y, luma_dc_table, luma_ac_table)
-            cb_cw[block_idx], _ = encode_block(block_cb[zigzag_idx], dcp_cb, chroma_dc_table, chroma_ac_table)
-            cr_cw[block_idx], _ = encode_block(block_cr[zigzag_idx], dcp_cr, chroma_dc_table, chroma_ac_table)
+            y_cw[block_idx], rate_y = encode_block(block_y[zigzag_idx], dcp_y, luma_dc_table, luma_ac_table)
+            cb_cw[block_idx], rate_cb = encode_block(block_cb[zigzag_idx], dcp_cb, chroma_dc_table, chroma_ac_table)
+            cr_cw[block_idx], rate_cr = encode_block(block_cr[zigzag_idx], dcp_cr, chroma_dc_table, chroma_ac_table)
+
+            # Distortion calculation
+            rec_y = image_dct_q[row_slice, col_slice, 0].astype(np.float64) * qm[:, :, 0]
+            rec_cb = image_dct_q[row_slice, col_slice, 1].astype(np.float64) * qm[:, :, 1]
+            rec_cr = image_dct_q[row_slice, col_slice, 2].astype(np.float64) * qm[:, :, 2]
+            d_y = np.sum(np.square(image_dct[row_slice, col_slice, 0] - rec_y))
+            d_cb = np.sum(np.square(image_dct[row_slice, col_slice, 1] - rec_cb))
+            d_cr = np.sum(np.square(image_dct[row_slice, col_slice, 2] - rec_cr))
+            rd_cost = (d_y + d_cb + d_cr) + lambda_y * rate_y + lambda_c * (rate_cb + rate_cr)
+
+            if not np.isclose(rd_cost, image_rd_cost[r >> 3, c >> 3]):
+                print("Consider this block")
 
             dcp_y, dcp_cb, dcp_cr = block_y[0], block_cb[0], block_cr[0]
             block_idx += 1
