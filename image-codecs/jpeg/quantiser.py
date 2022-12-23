@@ -64,52 +64,140 @@ def compute_quantisation_matrices(quality: int) -> Tuple[NDArray[(8, 8), np.int3
     quality = 5000 // quality if quality < 50 else 200 - quality * 2
 
     q_luma = np.clip((luma_quantisation_matrix * quality + 50) // 100, 1, 255)
-    q_chroma = np.clip((chroma_quantisation_matrix *
-                       quality + 50) // 100, 1, 255)
+    q_chroma = np.clip((chroma_quantisation_matrix * quality + 50) // 100, 1, 255)
 
     return q_luma, q_chroma
 
 
 def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8), np.float64],
                    table_dc: NDArray[(256, 2), np.int32], table_ac: NDArray[(256, 2), np.int32],
-                   _lambda: float, zz_idx: NDArray[(8, 8), np.uint8], pred_dc: int) -> Tuple[NDArray[(8, 8), np.int32], float]:
+                   _lambda: float, zz_idx: NDArray[(8, 8), np.uint8], r_zz_idx: NDArray[(8, 8), np.uint8],
+                   pred_dc: int) -> Tuple[NDArray[(8, 8), np.int32], float]:
     # Regular quantisation
     levels = np.divide(coefficients + 0.5, qm).astype(np.int32)
 
-    # Find distortion in the quantised domain
-    coeff_rec = np.multiply(levels, qm.astype(np.int32))
-    distortion = np.sum(np.square(coefficients - coeff_rec.astype(np.float64)))
+    # Coefficient-based rate and distortion storage
+    distortion0 = np.square(coefficients)
+    distortion_coeff = distortion0.copy()
+    rate_coeff = np.zeros((64), np.int32)
 
-    # Compute the rate for the DC coefficient
+    # Apply DPCM for the DC coefficient
     res_dc = levels[0, 0] - pred_dc
+
+    # Optimise its rate and distortion
     if not res_dc:
+        # Zero value residual, no quantisation distortion, just add the rate
         rate = table_dc[0, 1]
+        rate_coeff[0] = table_dc[0, 1]
+        distortion = (coefficients[0, 0] - levels[0, 0] * qm[0, 0])**2
+        distortion_coeff[0, 0] = distortion
     else:
-        res_dc_category = int(np.ceil(np.log2(np.abs(res_dc) + 1)))
-        rate = table_dc[res_dc_category, 1] + res_dc_category
+        # Perform RDO
+        best_rd_cost = np.finfo(np.float64).max
+        sign_dc = np.sign(levels[0, 0])
+        for step in range(0, 2, 1):
+            current_lev = np.abs(levels[0, 0]) - step
+            current_dist = (coefficients[0, 0] - sign_dc * current_lev * qm[0, 0])**2
+            res_dc = sign_dc * current_lev - pred_dc
+            if res_dc:
+                res_dc_category = int(np.ceil(np.log2(np.abs(res_dc) + 1)))
+                current_rate = table_dc[res_dc_category, 1] + res_dc_category
+            else:
+                current_rate = table_dc[0, 1]
+            current_rd_cost = current_dist + _lambda * current_rate
+            if current_rd_cost < best_rd_cost:
+                best_rd_cost = current_rd_cost
+                rate = current_rate
+                rate_coeff[0] = current_rate
+                distortion = current_dist
+                levels[0, 0] = sign_dc * current_lev
+                distortion_coeff[0, 0] = current_dist
+
+    distortion0 = distortion0.flatten()[zz_idx]
+    distortion_coeff = distortion_coeff.flatten()[zz_idx]
 
     # Find the eob and perform AC coefficients rate calculation
     levels_zz = levels.flatten()[zz_idx]
+    qm_zz = qm.flatten()[zz_idx]
+    coefficients_zz = coefficients.flatten()[zz_idx]
     idx = np.where(levels_zz[-1:0:-1] != 0)
     last_sig_coeff = 63 - idx[0][0] if len(idx[0]) else 0
 
     run_length = 0
     i = 1
     while i <= last_sig_coeff:
-        while not levels_zz[i]:
+        if not levels_zz[i]:
             run_length += 1
+            distortion += coefficients_zz[i]**2
             if run_length > 15:
                 rate += table_ac[15 << 4, 1]
+                rate_coeff[i] = table_ac[15 << 4, 1]
                 run_length = 0
-            i += 1
-        ac_category = int(np.ceil(np.log2(np.abs(levels_zz[i]) + 1)))
-        rlv_pair = (run_length << 4) | ac_category
-        rate += table_ac[rlv_pair, 1] + ac_category
-        run_length = 0
+        else:
+            ac_category = int(np.ceil(np.log2(np.abs(levels_zz[i]) + 1)))
+            rlv_pair = (run_length << 4) | ac_category
+            # RD cost for the current value
+            distortion_non_zero = (coefficients_zz[i] - levels_zz[i] * qm_zz[i])**2
+            rate_non_zero = table_ac[rlv_pair, 1] + ac_category
+
+            # RD cost if the value is set to zero
+            distortion_zero = coefficients_zz[i]**2
+            run_length_current, j = run_length + 1, i + 1
+            rate_zero, hit_15 = 0, 0
+            # Find how much the run length can be expanded
+            while j < last_sig_coeff and not levels_zz[j]:
+                run_length_current += 1
+                j += 1
+                if run_length_current > 15:
+                    rate_zero += table_ac[15 << 4, 1]
+                    hit_15 += 1
+                    run_length_current = 0
+            next_ac_category = int(np.ceil(np.log2(np.abs(levels_zz[j]) + 1)))
+            next_rlv_pair = (run_length_current << 4) | next_ac_category
+            rate_zero += table_ac[next_rlv_pair, 1] + next_ac_category
+            rate_zero /= (run_length_current + hit_15 * 15)
+
+            # RD costs comparison
+            rd_cost_non_zero = distortion_non_zero + _lambda * rate_non_zero
+            rd_cost_zero = distortion_zero + _lambda * rate_zero
+            if rd_cost_non_zero < rd_cost_zero:
+                distortion += distortion_non_zero
+                distortion_coeff[i] = distortion_non_zero
+                rate += rate_non_zero
+                rate_coeff[i] = rate_non_zero
+                run_length = 0
+            else:
+                distortion += distortion_zero
+                rate += rate_zero
+                rate_coeff[i] = rate_zero
+                run_length = 0 if run_length_current > 15 else run_length + 1
+                levels_zz[i] = 0
         i += 1
 
     if last_sig_coeff != 63:
         rate += table_ac[0, 1]
 
+    i = last_sig_coeff
+    best_eob = last_sig_coeff
+    distortion_now, rate_now = distortion, rate
+    cost_best = distortion + _lambda * rate
+    while i > 0:
+        # Adjust the cost
+        cost_now = (distortion_now - distortion_coeff[i] + distortion0[i]) + _lambda * (rate_now - rate_coeff[i])
+        if cost_now <= cost_best:
+            best_eob = i
+            cost_best = cost_now
+            distortion, rate = distortion_now, rate_now
+        distortion_now += distortion0[i] - distortion_coeff[i]
+        rate_now -= rate_coeff[i]
+        i -= 1
+
+    levels_zz[best_eob:] = 0
+
+    # Finish off the distortion calculation for all coefficients beyond the EOB (if any)
+    for i in range(last_sig_coeff + 1, 64, 1):
+        distortion += coefficients_zz[i]**2
+
     rd_cost = distortion + _lambda * rate
-    return levels, rd_cost
+    levels_rdoq = np.reshape(levels_zz[r_zz_idx], (8, 8))
+    return levels_rdoq, rd_cost

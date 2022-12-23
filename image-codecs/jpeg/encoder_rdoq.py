@@ -219,7 +219,7 @@ if __name__ == "__main__":
         input_image = rgb_to_ycbcr_bt709(red, green, blue)
 
     # Print encoding parameters
-    header_str = "Video coding tutorial - Python implementation of a JPEG encoder"
+    header_str = "Video coding tutorial - Python implementation of a JPEG encoder with Rate Distortion Optimised Quantisation (RDOQ)"
     print("-" * len(header_str))
     print(header_str)
     print(f"Input image: {args.input} - {cols}x{rows}")
