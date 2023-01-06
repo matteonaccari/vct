@@ -3,7 +3,7 @@ Methods implementing image compression as specified in the
 JPEG standard: https://www.itu.int/rec/T-REC-T.81-199209-I/en
 with the addition of Rate Distortion Optimised Quantisation (RDOQ).
 
-Copyright(c) 2022 Matteo Naccari
+Copyright(c) 2023 Matteo Naccari
 All Rights Reserved.
 
 email: matteo.naccari@gmail.com | matteo.naccari@polimi.it | matteo.naccari@lx.it.pt
@@ -59,8 +59,7 @@ from syntax import (write_comment, write_huffman_table, write_jfif_header,
 
 def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_name: str, quality: int) -> Tuple[int, int]:
     qy, qc = compute_quantisation_matrices(quality)
-    qm = np.dstack((qy, qc, qc)).astype(np.float64)
-    _, zigzag_scan = get_zigzag_scan(8)
+    r_zigzag_scan, zigzag_scan = get_zigzag_scan(8)
 
     # Compute the Lagrange multiplier
     lambda_y = 0.85 * np.mean(qy)**2
@@ -97,9 +96,9 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
             image_dct[row_slice, col_slice, 1] = compute_dct(block[:, :, 1] - 128, T)
             image_dct[row_slice, col_slice, 2] = compute_dct(block[:, :, 2] - 128, T)
 
-            image_dct_q[row_slice, col_slice, 0], cost_y = rdoq_8x8_plane(image_dct[row_slice, col_slice, 0], qm[:, :, 0], luma_dc_table, luma_ac_table, lambda_y, zigzag_idx, dcp_y)
-            image_dct_q[row_slice, col_slice, 1], cost_cb = rdoq_8x8_plane(image_dct[row_slice, col_slice, 1], qm[:, :, 1], chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, dcp_cb)
-            image_dct_q[row_slice, col_slice, 2], cost_cr = rdoq_8x8_plane(image_dct[row_slice, col_slice, 2], qm[:, :, 2], chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, dcp_cr)
+            image_dct_q[row_slice, col_slice, 0], cost_y = rdoq_8x8_plane(image_dct[row_slice, col_slice, 0], qy, luma_dc_table, luma_ac_table, lambda_y, zigzag_idx, r_zigzag_scan, dcp_y)
+            image_dct_q[row_slice, col_slice, 1], cost_cb = rdoq_8x8_plane(image_dct[row_slice, col_slice, 1], qc, chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, r_zigzag_scan, dcp_cb)
+            image_dct_q[row_slice, col_slice, 2], cost_cr = rdoq_8x8_plane(image_dct[row_slice, col_slice, 2], qc, chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, r_zigzag_scan, dcp_cr)
             image_rd_cost[r >> 3, c >> 3] = cost_y + cost_cb + cost_cr
             dcp_y = image_dct_q[r, c, 0]
             dcp_cb = image_dct_q[r, c, 1]
@@ -123,10 +122,10 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
             cb_cw[block_idx], rate_cb = encode_block(block_cb[zigzag_idx], dcp_cb, chroma_dc_table, chroma_ac_table)
             cr_cw[block_idx], rate_cr = encode_block(block_cr[zigzag_idx], dcp_cr, chroma_dc_table, chroma_ac_table)
 
-            # Distortion calculation
-            rec_y = image_dct_q[row_slice, col_slice, 0].astype(np.float64) * qm[:, :, 0]
-            rec_cb = image_dct_q[row_slice, col_slice, 1].astype(np.float64) * qm[:, :, 1]
-            rec_cr = image_dct_q[row_slice, col_slice, 2].astype(np.float64) * qm[:, :, 2]
+            # Rate distortion cost calculation
+            rec_y = image_dct_q[row_slice, col_slice, 0].astype(np.float64) * qy
+            rec_cb = image_dct_q[row_slice, col_slice, 1].astype(np.float64) * qc
+            rec_cr = image_dct_q[row_slice, col_slice, 2].astype(np.float64) * qc
             d_y = np.sum(np.square(image_dct[row_slice, col_slice, 0] - rec_y))
             d_cb = np.sum(np.square(image_dct[row_slice, col_slice, 1] - rec_cb))
             d_cr = np.sum(np.square(image_dct[row_slice, col_slice, 2] - rec_cr))
@@ -142,7 +141,7 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
     # Start with the high level syntax metadata
     bw = BitWriter(bitstream_name)
     write_jfif_header(bw)
-    write_comment(bw, "VCT JPEG encoder in Python")
+    write_comment(bw, "VCT JPEG encoder in Python with rate distortion optimised quantisation")
     write_quantisation_tables(bw, qy.flatten()[zigzag_idx], qc.flatten()[zigzag_idx])
     write_start_of_frame(bw, rows, cols)
     write_huffman_table(bw, luma_dc_bits, luma_dc_values, luma_ac_bits, luma_ac_values,

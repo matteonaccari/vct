@@ -61,11 +61,10 @@ chroma_quantisation_matrix = np.array([[17, 18, 24, 47, 99, 99, 99, 99],
 
 
 @dataclass
-class RdoqInfo:
+class RunLenghtValueInfo:
     category: int
     run_length: int
     start_idx: int
-    hit15: int
     distortion: float
     rate: int
 
@@ -137,26 +136,21 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
     distortion_coeff = distortion_coeff.flatten()[zz_idx]
 
     # Step 1: Find run length value pairs and their RD cost
-    rate15 = table_ac[15 << 4, 1]
+    rate15_0 = table_ac[15 << 4, 1]
     rdoq_memory = []
     i = 1
     while i <= last_sig_coeff:
-        current_info = RdoqInfo(0, 0, i, 0, 0.0, 0)
+        current_info = RunLenghtValueInfo(0, 0, i, 0.0, 0)
         while not levels_zz[i]:
             current_info.run_length += 1
             current_info.distortion += distortion0[i]
             i += 1
-            if current_info.run_length > 15:
-                current_info.run_length = 0
-                current_info.hit15 += 1
-                current_info.rate += rate15
-                rate += rate15
         distortion_coeff[i] = (coefficients_zz[i] - levels_zz[i] * qm_zz[i])**2
         current_info.distortion += distortion_coeff[i]
         distortion += current_info.distortion
         current_info.category = int(np.ceil(np.log2(np.abs(levels_zz[i]) + 1)))
-        rlv_pair = (current_info.run_length << 4) | current_info.category
-        rate_coeff[i] = table_ac[rlv_pair, 1] + current_info.category
+        rlv_pair = ((current_info.run_length & 15) << 4) | current_info.category
+        rate_coeff[i] = table_ac[rlv_pair, 1] + current_info.category + (current_info.run_length >> 4) * rate15_0
         current_info.rate += rate_coeff[i]
         rate += rate_coeff[i]
         rdoq_memory.append(current_info)
@@ -171,27 +165,23 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
         rate_singletons = e.rate + e_next.rate
         rd_cost_singletons = distortion_singletons + _lambda * rate_singletons
 
-        full_length = e.run_length + e.hit15 * 15
-        full_length_next = e_next.run_length + e_next.hit15 * 15
-        end_run = e.start_idx + full_length
+        end_run = e.start_idx + e.run_length
         distortion_merge = e.distortion - distortion_coeff[end_run] + distortion0[end_run] + e_next.distortion
-        new_run_length = (full_length + full_length_next + 1) % 15
-        new_hit15 = (full_length + full_length_next + 1) // 15
-        merge_rlv_pair = (new_run_length << 4) | e_next.category
-        rate_merge = table_ac[merge_rlv_pair, 1] + e_next.category + (e.hit15 + e_next.hit15 + new_hit15) * rate15
+        new_run_length = e.run_length + e_next.run_length + 1
+        merge_rlv_pair = ((new_run_length & 15) << 4) | e_next.category
+        rate_merge = table_ac[merge_rlv_pair, 1] + e_next.category + (new_run_length >> 4) * rate15_0
         rd_cost_merge = distortion_merge + _lambda * rate_merge
 
         if rd_cost_merge <= rd_cost_singletons:
             levels_zz[end_run] = 0
             distortion_coeff[end_run] = distortion0[end_run]
             rate_coeff[end_run] = 0
-            rate_coeff[end_run + full_length_next + 1] = rate_merge
+            rate_coeff[end_run + e_next.run_length + 1] = rate_merge
             distortion += distortion_merge - distortion_singletons
             rate += rate_merge - rate_singletons
             e_next.distortion = distortion_merge
             e_next.rate = rate_merge
             e_next.start_idx = e.start_idx
-            e_next.hit15 = ((e.hit15 + e_next.hit15 + new_hit15) * 15 + 1) // 15
             e_next.run_length = new_run_length
             rdoq_memory[i + 1] = e_next
 
