@@ -62,8 +62,8 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
     r_zigzag_scan, zigzag_scan = get_zigzag_scan(8)
 
     # Compute the Lagrange multiplier
-    lambda_y = 0.85 * np.mean(qy)**2
-    lambda_c = 0.85 * np.mean(qc)**2
+    lambda_y = 0.85 * np.mean(qy)**2 / 8
+    lambda_c = 0.85 * np.mean(qc)**2 / 8
 
     # Luma Huffman table generation
     luma_dc_table = expand_huffman_table(luma_dc_bits, luma_dc_values)
@@ -87,6 +87,9 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
     zigzag_idx = zigzag_scan.flatten()
     image_dct_q = np.zeros(input_image8.shape, np.int32)
     image_rd_cost = np.zeros((rows8 >> 3, cols8 >> 3), np.float64)
+    image_rd_cost_noopt = np.zeros((rows8 >> 3, cols8 >> 3), np.float64)
+    ssd_opt, ssd_no_opt = 0, 0
+    rate_opt, rate_no_opt = 0, 0
     for r in range(0, rows8, 8):
         row_slice = slice(r, r + 8)
         for c in range(0, cols8, 8):
@@ -100,6 +103,24 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
             image_dct_q[row_slice, col_slice, 1], cost_cb = rdoq_8x8_plane(image_dct[row_slice, col_slice, 1], qc, chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, r_zigzag_scan, dcp_cb)
             image_dct_q[row_slice, col_slice, 2], cost_cr = rdoq_8x8_plane(image_dct[row_slice, col_slice, 2], qc, chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, r_zigzag_scan, dcp_cr)
             image_rd_cost[r >> 3, c >> 3] = cost_y + cost_cb + cost_cr
+
+            ###########################
+            levels_y = np.divide(image_dct[row_slice, col_slice, 0] + 0.5, qy).astype(np.int32)
+            levels_cb = np.divide(image_dct[row_slice, col_slice, 1] + 0.5, qc).astype(np.int32)
+            levels_cr = np.divide(image_dct[row_slice, col_slice, 2] + 0.5, qc).astype(np.int32)
+            distortion_y = np.sum(np.square(image_dct[row_slice, col_slice, 0] - levels_y.astype(np.float64) * qy))
+            distortion_cb = np.sum(np.square(image_dct[row_slice, col_slice, 1] - levels_cb.astype(np.float64) * qc))
+            distortion_cr = np.sum(np.square(image_dct[row_slice, col_slice, 2] - levels_cr.astype(np.float64) * qc))
+            _, rate_y = encode_block(levels_y.flatten()[zigzag_idx], dcp_y, luma_dc_table, luma_ac_table)
+            _, rate_cb = encode_block(levels_cb.flatten()[zigzag_idx], dcp_cb, chroma_dc_table, chroma_ac_table)
+            _, rate_cr = encode_block(levels_cr.flatten()[zigzag_idx], dcp_cr, chroma_dc_table, chroma_ac_table)
+            image_rd_cost_noopt[r >> 3, c >> 3] = distortion_y + distortion_cb + distortion_cr + lambda_y * rate_y + lambda_c * (rate_cb + rate_cr)
+            ssd_no_opt += distortion_y + distortion_cb + distortion_cr
+            rate_no_opt += rate_y + rate_cb + rate_cr
+            if not image_rd_cost[r >> 3, c >> 3] <= image_rd_cost_noopt[r >> 3, c >> 3]:
+                assert np.isclose(image_rd_cost[r >> 3, c >> 3], image_rd_cost_noopt[r >> 3, c >> 3])
+            ############################
+
             dcp_y = image_dct_q[r, c, 0]
             dcp_cb = image_dct_q[r, c, 1]
             dcp_cr = image_dct_q[r, c, 2]
@@ -130,6 +151,8 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
             d_cb = np.sum(np.square(image_dct[row_slice, col_slice, 1] - rec_cb))
             d_cr = np.sum(np.square(image_dct[row_slice, col_slice, 2] - rec_cr))
             rd_cost = (d_y + d_cb + d_cr) + lambda_y * rate_y + lambda_c * (rate_cb + rate_cr)
+            ssd_opt += d_y + d_cb + d_cr
+            rate_opt += rate_y + rate_cb + rate_cr
 
             if not np.isclose(rd_cost, image_rd_cost[r >> 3, c >> 3]):
                 print("Consider this block")
@@ -177,6 +200,12 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
     bytes_total = bw.fh.tell()
     vlc_bits = bw.get_vlc_bits()
     bw.terminate()
+
+    print(f"bpp opt: {rate_opt / rows / cols}, no opt {rate_no_opt / rows / cols}")
+    psnr_opt = 10 * np.log10(255**2 / (ssd_opt / rows / cols))
+    psnr_no_opt = 10 * np.log10(255**2 / (ssd_no_opt / rows / cols))
+    print(f"PSNR opt: {psnr_opt}, no opt: {psnr_no_opt}")
+    print(f"RD cost opt: {np.sum(image_rd_cost)}, no opt: {np.sum(image_rd_cost_noopt)}")
 
     return bytes_total, vlc_bits
 

@@ -172,7 +172,7 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
         rate_merge = table_ac[merge_rlv_pair, 1] + e_next.category + (new_run_length >> 4) * rate15_0
         rd_cost_merge = distortion_merge + _lambda * rate_merge
 
-        if rd_cost_merge <= rd_cost_singletons:
+        if rd_cost_merge < rd_cost_singletons:
             levels_zz[end_run] = 0
             distortion_coeff[end_run] = distortion0[end_run]
             rate_coeff[end_run] = 0
@@ -187,19 +187,24 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
 
         i += 1
 
+    # Add the distortion for those pixels beyond the last significant coefficient
+    if last_sig_coeff != 63:
+        distortion += np.sum(distortion_coeff[last_sig_coeff + 1:])
+
     assert rate == np.sum(rate_coeff)
-    assert np.isclose(distortion, np.sum(distortion_coeff[:last_sig_coeff + 1]))
+    assert np.isclose(distortion, np.sum(distortion_coeff))
 
     # Step 3: Move the EOB towards the top left corner
     i = last_sig_coeff
     best_eob = last_sig_coeff + 1
     rate_eob = table_ac[0, 1]
+    rate += rate_eob
     distortion_now, rate_now = distortion, rate
     cost_best = distortion + _lambda * rate
     while i > 0:
         # Adjust the cost
-        cost_now = (distortion_now - distortion_coeff[i] + distortion0[i]) + _lambda * (rate_now - rate_coeff[i] + rate_eob)
-        if cost_now <= cost_best:
+        cost_now = (distortion_now - distortion_coeff[i] + distortion0[i]) + _lambda * (rate_now - rate_coeff[i])
+        if cost_now < cost_best:
             best_eob = i + 1
             cost_best = cost_now
             distortion, rate = distortion_now, rate_now
@@ -207,14 +212,10 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
         rate_now -= rate_coeff[i]
         i -= 1
 
+    if best_eob == last_sig_coeff + 1:
+        rate -= rate_eob
+
     levels_zz[best_eob:] = 0
-
-    if best_eob != 64:
-        rate += rate_eob
-
-    # Finish off the distortion calculation for all coefficients beyond the EOB (if any)
-    for i in range(last_sig_coeff + 1, 64, 1):
-        distortion += coefficients_zz[i]**2
 
     rd_cost = distortion + _lambda * rate
     levels_rdoq = np.reshape(levels_zz[r_zz_idx], (8, 8))
