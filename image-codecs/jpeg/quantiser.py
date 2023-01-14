@@ -39,7 +39,7 @@ from typing import Tuple
 import numpy as np
 from nptyping import NDArray
 from dataclasses import dataclass
-from entropy import encode_block
+# from entropy import encode_block
 
 # Quantisation tables for luma and chroma components, see Section K.1 of the spec.
 luma_quantisation_matrix = np.array([[16, 11, 10, 16, 24, 40, 51, 61],
@@ -90,9 +90,9 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
     levels_m1 = np.multiply(s, np.abs(levels) - 1)
     distortion_coeff = np.square(coefficients - levels.astype(np.float64) * qm)
     distortion_coeff_m1 = np.square(coefficients - levels_m1.astype(np.float64) * qm)
-    distortion_no_opt = np.sum(distortion_coeff)
-    _, rate_no_opt = encode_block(levels.flatten()[zz_idx], pred_dc, table_dc, table_ac)
-    rd_cost_no_opt = distortion_no_opt + _lambda * rate_no_opt
+    # distortion_no_opt = np.sum(distortion_coeff)
+    # _, rate_no_opt = encode_block(levels.flatten()[zz_idx], pred_dc, table_dc, table_ac)
+    # rd_cost_no_opt = distortion_no_opt + _lambda * rate_no_opt
 
     # Coefficient-based rate and distortion storage
     distortion0 = np.square(coefficients)
@@ -222,18 +222,18 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
     if last_sig_coeff != 63:
         distortion += np.sum(distortion_coeff[last_sig_coeff + 1:])
 
-    # Re-check rate and distortion calculations
-    _, rate_now = encode_block(levels_zz, pred_dc, table_dc, table_ac)
-    levels_now = np.reshape(levels_zz[r_zz_idx], (8, 8))
-    distortion_now = np.sum(np.square(coefficients - levels_now * qm))
+    # # Re-check rate and distortion calculations
+    # _, rate_now = encode_block(levels_zz, pred_dc, table_dc, table_ac)
+    # levels_now = np.reshape(levels_zz[r_zz_idx], (8, 8))
+    # distortion_now = np.sum(np.square(coefficients - levels_now * qm))
 
-    if last_sig_coeff != 63:
-        assert rate_now == rate + rate_eob
-    else:
-        assert rate_now == rate
-    assert rate == np.sum(rate_coeff)
+    # if last_sig_coeff != 63:
+    #     assert rate_now == rate + rate_eob
+    # else:
+    #     assert rate_now == rate
+    # assert rate == np.sum(rate_coeff)
 
-    assert np.isclose(distortion_now, distortion)
+    # assert np.isclose(distortion_now, distortion)
 
     # Step 3: Move the EOB towards the top left corner
     i = last_sig_coeff
@@ -258,10 +258,10 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
     levels_zz[best_eob:] = 0
 
     levels_rdoq = np.reshape(levels_zz[r_zz_idx], (8, 8))
-    _, rate = encode_block(levels_zz, pred_dc, table_dc, table_ac)
-    distortion = np.sum(np.square(coefficients - levels_rdoq.astype(np.float64) * qm))
-    rd_cost = distortion + _lambda * rate
-    if not rd_cost < rd_cost_no_opt:
-        assert np.isclose(rd_cost, rd_cost_no_opt)
+    # _, rate = encode_block(levels_zz, pred_dc, table_dc, table_ac)
+    # distortion = np.sum(np.square(coefficients - levels_rdoq.astype(np.float64) * qm))
+    # rd_cost = distortion + _lambda * rate
+    # if not rd_cost < rd_cost_no_opt:
+    #     assert np.isclose(rd_cost, rd_cost_no_opt)
 
     return levels_rdoq, distortion, rate

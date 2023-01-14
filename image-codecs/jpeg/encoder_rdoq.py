@@ -81,12 +81,14 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
     # Compute the DCT matrix
     T = compute_dct_matrix(8)
 
-    # Loop over all 8x8 blocks, compute the 2D DCT and quantise the transform coefficients using RDOQ
+    # Loop over all 8x8 blocks, compute the 2D DCT, quantise the transform coefficients using RDOQ and then run entropy encoding
     dcp_y, dcp_cb, dcp_cr = 0, 0, 0
     zigzag_idx = zigzag_scan.flatten()
-    image_dct_q = np.zeros(input_image8.shape, np.int32)
     ssd_y, ssd_c = 0, 0
     rate_y, rate_c = 0, 0
+    block_idx = 0
+    total_blocks = rows8 * cols8 // 64
+    y_cw, cb_cw, cr_cw = [None] * total_blocks, [None] * total_blocks, [None] * total_blocks
     for r in range(0, rows8, 8):
         row_slice = slice(r, r + 8)
         for c in range(0, cols8, 8):
@@ -96,38 +98,24 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
             block_cb = compute_dct(block[:, :, 1] - 128, T)
             block_cr = compute_dct(block[:, :, 2] - 128, T)
 
-            image_dct_q[row_slice, col_slice, 0], d_y, r_y = rdoq_8x8_plane(block_y, qy, luma_dc_table, luma_ac_table, lambda_y, zigzag_idx, r_zigzag_scan, dcp_y)
-            image_dct_q[row_slice, col_slice, 1], d_cb, r_cb = rdoq_8x8_plane(block_cb, qc, chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, r_zigzag_scan, dcp_cb)
-            image_dct_q[row_slice, col_slice, 2], d_cr, r_cr = rdoq_8x8_plane(block_cr, qc, chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, r_zigzag_scan, dcp_cr)
+            # RDOQ
+            levels_y, d_y, r_y = rdoq_8x8_plane(block_y, qy, luma_dc_table, luma_ac_table, lambda_y, zigzag_idx, r_zigzag_scan, dcp_y)
+            levels_cb, d_cb, r_cb = rdoq_8x8_plane(block_cb, qc, chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, r_zigzag_scan, dcp_cb)
+            levels_cr, d_cr, r_cr = rdoq_8x8_plane(block_cr, qc, chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, r_zigzag_scan, dcp_cr)
             rate_y += r_y
             rate_c += r_cb + r_cr
             ssd_y += d_y
             ssd_c += d_cb + d_cr
 
-            dcp_y = image_dct_q[r, c, 0]
-            dcp_cb = image_dct_q[r, c, 1]
-            dcp_cr = image_dct_q[r, c, 2]
-
-    # Loop again over all 8x8 blocks to perform entropy coding
-    total_blocks = rows8 * cols8 // 64
-    dcp_y, dcp_cb, dcp_cr = 0, 0, 0
-    block_idx = 0
-    y_cw, cb_cw, cr_cw = [None] * total_blocks, [None] * total_blocks, [None] * total_blocks
-
-    for r in range(0, rows8, 8):
-        row_slice = slice(r, r + 8)
-        for c in range(0, cols8, 8):
-            col_slice = slice(c, c + 8)
-            block_y = image_dct_q[row_slice, col_slice, 0].flatten()
-            block_cb = image_dct_q[row_slice, col_slice, 1].flatten()
-            block_cr = image_dct_q[row_slice, col_slice, 2].flatten()
-
-            y_cw[block_idx], _ = encode_block(block_y[zigzag_idx], dcp_y, luma_dc_table, luma_ac_table)
-            cb_cw[block_idx], _ = encode_block(block_cb[zigzag_idx], dcp_cb, chroma_dc_table, chroma_ac_table)
-            cr_cw[block_idx], _ = encode_block(block_cr[zigzag_idx], dcp_cr, chroma_dc_table, chroma_ac_table)
-
-            dcp_y, dcp_cb, dcp_cr = block_y[0], block_cb[0], block_cr[0]
+            # Entropy encoding
+            y_cw[block_idx], _ = encode_block(levels_y.flatten()[zigzag_idx], dcp_y, luma_dc_table, luma_ac_table)
+            cb_cw[block_idx], _ = encode_block(levels_cb.flatten()[zigzag_idx], dcp_cb, chroma_dc_table, chroma_ac_table)
+            cr_cw[block_idx], _ = encode_block(levels_cr.flatten()[zigzag_idx], dcp_cr, chroma_dc_table, chroma_ac_table)
             block_idx += 1
+
+            dcp_y = levels_y[0, 0]
+            dcp_cb = levels_cb[0, 0]
+            dcp_cr = levels_cr[0, 0]
 
     # Compose all data to form the final bitstream
     # Start with the high level syntax metadata
