@@ -102,6 +102,7 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
             levels_y, d_y, r_y = rdoq_8x8_plane(block_y, qy, luma_dc_table, luma_ac_table, lambda_y, zigzag_idx, r_zigzag_scan, dcp_y)
             levels_cb, d_cb, r_cb = rdoq_8x8_plane(block_cb, qc, chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, r_zigzag_scan, dcp_cb)
             levels_cr, d_cr, r_cr = rdoq_8x8_plane(block_cr, qc, chroma_dc_table, chroma_ac_table, lambda_c, zigzag_idx, r_zigzag_scan, dcp_cr)
+
             rate_y += r_y
             rate_c += r_cb + r_cr
             ssd_y += d_y
@@ -156,11 +157,6 @@ def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_
     # Get coding stats
     bytes_total = bw.fh.tell()
     bw.terminate()
-
-    # print(f"bpp opt: {rate_opt / rows / cols}, no opt {rate_no_opt / rows / cols}")
-    # psnr_opt = 10 * np.log10(255**2 / (ssd_opt / rows / cols))
-    # psnr_no_opt = 10 * np.log10(255**2 / (ssd_no_opt / rows / cols))
-    # print(f"PSNR opt: {psnr_opt}, no opt: {psnr_no_opt}")
 
     return bytes_total, rate_y, rate_c, ssd_y, ssd_c
 
