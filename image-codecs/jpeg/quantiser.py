@@ -103,7 +103,7 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
     # Apply DPCM for the DC coefficient
     res_dc = levels[0, 0] - pred_dc
 
-    # Step 1: Optimise the RD cost for the DC coefficient
+    # Phase 1: Optimise the RD cost for the DC coefficient
     if not res_dc:
         # Zero value residual, no quantisation distortion, just add the rate
         rate = table_dc[0, 1]
@@ -143,7 +143,7 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
     qm_zz = qm.flatten()[zz_idx]
     s_zz = s.flatten()[zz_idx]
 
-    # Step 2: Try different level values for each AC coefficient and pick the one which
+    # Phase 2: Try different level values for each AC coefficient and pick the one which
     # minimimise its RD cost
     rate_eob = table_ac[0, 1]
     i = 1
@@ -194,7 +194,7 @@ def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8)
     distortion = np.sum(distortion_coeff)
     rate = np.sum(rate_coeff)
 
-    # Step 3: Move the EOB towards the block's top left corner
+    # Phase 3: Move the EOB towards the block's top left corner
     i = last_sig_coeff
     best_eob = last_sig_coeff + 1
     rate += rate_eob
