@@ -43,13 +43,12 @@ from typing import Any, Tuple
 
 import cv2
 import numpy as np
-from nptyping import NDArray
-
 from bit_io import BitWriter
 from ct import rgb_to_ycbcr_bt709
 from dct import compute_dct, compute_dct_matrix
 from entropy import (design_huffman_table, encode_block, expand_huffman_table,
                      get_block_symbols, get_zigzag_scan)
+from nptyping import NDArray
 from quantiser import compute_quantisation_matrices
 from syntax import (write_comment, write_huffman_table, write_jfif_header,
                     write_quantisation_tables, write_segment_marker,
