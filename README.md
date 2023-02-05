@@ -2,13 +2,13 @@
 Tutorials on the fundamentals tools used in image and video compression.
 
 ## Introduction
-The Video Coding Tutorial (VCT) repository provides a set of Jupyter notebooks to explain the fundations of image and data compression with focus on the following aspects:
+The Video Coding Tutorial (VCT) repository provides a set of Jupyter notebooks to explain the foundations of image and data compression with focus on the following aspects:
  * [Entropy coding](./entropy-coding)
  * [Transform coding](./transform-coding)
  * [Quantisation](./quantisation)
  * [Image codecs](./image-codecs/)
 
-The material has been prepared with the aim to complement the theoretical fundations that can be learned from some of the classical text books on image and video compression (see below for a list of references). It is believed that seeing how the theory is put into limited, yet practical examples, readers will strengthen their understanding in the area of compression of visual data.
+The material has been prepared with the aim to complement the theoretical foundations that can be learned from some of the classical text books on image and video compression (see below for a list of references). It is believed that seeing how the theory is put into limited, yet practical examples, readers will strengthen their understanding in the area of compression of visual data. Accordingly, along with a description and explanation on the coding tools/algorithms/methods presented, a Python implementation is also provided so that the reader can perform additional code debugging, investigations, etc. to expand their understanding in the area of image/video compression. As of February 2023 it is known to the author that some key aspects of video codecs such as inter frame prediction are still not present in this tutorial. Please bear with me: being living on planet Earth where days are only of 24 hours and needing to work to find the means the support myself, I still haven't found time to get round these key aspects of video coding. I will get there, eventually.
 
 ## References
 Some good textbooks that can be used to learn the fundamentals as well as being up to date with the state-of-the-art are:
@@ -51,7 +51,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Copyright
-Copyright(c) 2022 Matteo Naccari - All Rights Reserved.
+Copyright(c) 2023 Matteo Naccari - All Rights Reserved.
 
 ## Contributing
 Feel free to submit pull requests and issue tickets with suggestions to improve, fix and expand this collection of tutorials.
