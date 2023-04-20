@@ -44,48 +44,29 @@ import numpy as np
 from typing import Any
 from nptyping import NDArray
 import time
-from dwt import inverse_haar_dwt
+from dwt import DwtType, inverse_haar_dwt, inverse_legall_5_3_dwt
 from quantiser import reconstruct_plane
 from entropy import code_block_size, decode_subband
 from ct import ycbcr_to_rgb_bt709
 import cv2
+from hls import read_ips
 
-symbolic_header = "SWIC-V1"
 
-
-def swic_decoder(bitstream_file: str, levels: int) -> NDArray[(Any, Any, 3), np.int32]:
+def swic_decoder(bitstream_file: str, levels_to_decode: int) -> NDArray[(Any, Any, 3), np.int32]:
     # High level syntax parsing
     with open(bitstream_file, "rb") as fh:
-        # Symbolic header
-        header = fh.read(len(symbolic_header)).decode("ascii")
-        if header != symbolic_header:
-            raise Exception(f"Symbolic header '{header}' difference from: {symbolic_header}")
-        # Image width and height
-        cols = int().from_bytes(fh.read(2), byteorder="little")
-        rows = int().from_bytes(fh.read(2), byteorder="little")
-        # Pixel bit depth and number of components
-        depth_components_bytes = int().from_bytes(fh.read(1), byteorder="little")
-        bitdepth = (depth_components_bytes & 0x0F) + 8
-        components = (depth_components_bytes >> 4) & 0x03
-        # Decomposition levels and transform type
-        levels_transform_type = int().from_bytes(fh.read(1), byteorder="little")
-        levels_encoded = (levels_transform_type >> 4) & 0x0F
-        transform = levels_transform_type & 0x03
-        if levels_encoded < levels:
-            print(f"Warning: levels required to be decoded ({levels}) are more than the ones actually encoded ({levels_encoded})")
-            levels = levels_encoded
-        elif not levels:
-            levels = levels_encoded
-        if transform:
-            raise Exception("Only Haar supported so far")
-        # Quantisation parameter
-        qp = int().from_bytes(fh.read(1), byteorder="little")
+        ips = read_ips(fh)
+        transform_type = DwtType(ips.transform)
+        if ips.levels < levels_to_decode:
+            print(f"Warning: levels required to be decoded ({levels_to_decode}) are more than the ones actually encoded ({ips.levels})")
+        elif not levels_to_decode:
+            levels_to_decode = ips.levels
 
         # Load into memory all code block payloads
-        payload_levels = [None] * levels
-        for level in range(levels):
+        payload_levels = [None] * ips.levels
+        for level in range(levels_to_decode):
             total_subbands = 4 if not level else 3
-            rows_sb, cols_sb = rows >> (levels_encoded - level), cols >> (levels_encoded - level)
+            rows_sb, cols_sb = ips.rows >> (ips.levels - level), ips.cols >> (ips.levels - level)
             rows_cb, cols_cb = (rows_sb + code_block_size - 1) // code_block_size, (cols_sb + code_block_size - 1) // code_block_size
             total_cbs = rows_cb * cols_cb
 
@@ -99,51 +80,53 @@ def swic_decoder(bitstream_file: str, levels: int) -> NDArray[(Any, Any, 3), np.
             payload_levels[level] = payload_sbs
 
     # Print out high level syntax information
-    print(f"Encoded image size: {cols}x{rows}")
-    print(f"Encoded image bit depth: {bitdepth} [bpp]")
-    print(f"Encoded image number of components: {components}")
-    print(f"Output image size: {cols >> (levels_encoded - levels)}x{rows >> (levels_encoded - levels)}")
-    print(f"Quantisation parameter: {qp}")
+    print(f"Encoded image size: {ips.cols}x{ips.rows}")
+    print(f"Encoded image bit depth: {ips.bitdepth} [bpp]")
+    print(f"Encoded image number of components: {ips.components}")
+    print(f"Output image size: {ips.cols >> (ips.levels - levels_to_decode)}x{ips.rows >> (ips.levels - levels_to_decode)}")
+    print(f"Quantisation parameter: {ips.qp}")
+    print(f"Tranform: {transform_type}")
 
     # Entropy decoding
     coefficients = []
-    for level in range(levels):
+    for level in range(levels_to_decode):
         current_level = payload_levels[level]
-        rows_sb, cols_sb = rows >> (levels_encoded - level), cols >> (levels_encoded - level)
+        rows_sb, cols_sb = ips.rows >> (ips.levels - level), ips.cols >> (ips.levels - level)
         coefficients_sbs = []
         for sb_idx, sb in enumerate(current_level):
             is_ll = not level and not sb_idx
-            coefficients_sb = decode_subband(sb, rows_sb, cols_sb, components, is_ll)
+            coefficients_sb = decode_subband(sb, rows_sb, cols_sb, ips.components, is_ll)
             coefficients_sbs.append(coefficients_sb)
         coefficients.append(coefficients_sbs)
 
     # Inverse quantisation
     coefficients_r = []
-    for level in range(levels):
-        shift = levels_encoded - level - 1
+    for level in range(levels_to_decode):
+        shift = ips.levels - level - 1
         offset = 1 << (shift - 1) if shift else 0
         current_level = coefficients[level]
         coefficients_sbs_r = []
         for sb_idx, sb in enumerate(current_level):
             coefficients_sb_r = np.zeros(sb.shape, np.int32)
-            if components == 1:
-                coefficients_sb_r = (reconstruct_plane(sb, qp) + offset) >> shift
+            if ips.components == 1:
+                coefficients_sb_r = (reconstruct_plane(sb, ips.qp) + offset) >> shift
             else:
-                for comp in range(components):
-                    coefficients_sb_r[:, :, comp] = (reconstruct_plane(sb[:, :, comp], qp) + offset) >> shift
+                for comp in range(ips.components):
+                    coefficients_sb_r[:, :, comp] = (reconstruct_plane(sb[:, :, comp], ips.qp) + offset) >> shift
             coefficients_sbs_r.append(coefficients_sb_r)
         coefficients_r.append(coefficients_sbs_r)
 
-    max_value = (1 << bitdepth) - 1
-    midrange_value = 1 << (bitdepth - 1)
+    max_value = (1 << ips.bitdepth) - 1
+    midrange_value = 1 << (ips.bitdepth - 1)
 
     # Inverse transform
-    for level in range(levels):
+    inverse_dwt = {DwtType.Haar: inverse_haar_dwt, DwtType.LeGall5_3: inverse_legall_5_3_dwt}
+    for level in range(levels_to_decode):
         subbands = coefficients_r[level]
         if not level:
-            current_ll = inverse_haar_dwt(subbands[0], subbands[1], subbands[2], subbands[3])
+            current_ll = inverse_dwt[transform_type](subbands[0], subbands[1], subbands[2], subbands[3])
         else:
-            current_ll = inverse_haar_dwt(current_ll, subbands[0], subbands[1], subbands[2])
+            current_ll = inverse_dwt[transform_type](current_ll, subbands[0], subbands[1], subbands[2])
 
     decoded_image = current_ll + midrange_value
     decoded_image = np.clip(decoded_image, 0, max_value)

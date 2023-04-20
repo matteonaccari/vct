@@ -46,24 +46,27 @@ import cv2
 from typing import Any, Tuple
 from nptyping import NDArray
 import time
-from dwt import forward_haar_dwt, inverse_haar_dwt
+from dwt import forward_haar_dwt, inverse_haar_dwt, DwtType, forward_legall_5_3_dwt, inverse_legall_5_3_dwt
 from quantiser import quantise_plane, reconstruct_plane
 from entropy import encode_subband
-from decoder import symbolic_header
+from hls import ImageParameterSet, write_ips
 
 
-def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32], bitstream_name: str, qp: int, bitdepth: int, levels: int, transform: int, reconstruction_needed: bool) -> Tuple[int, NDArray[(Any, Any, Any), np.int32]]:
+def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32], bitstream_name: str, qp: int, bitdepth: int, levels: int, transform_type: DwtType, reconstruction_needed: bool) -> Tuple[int, NDArray[(Any, Any, Any), np.int32]]:
     # Remove mid range value from input data
     midrange_value = 1 << (bitdepth - 1)
     max_value = (1 << bitdepth) - 1
     input_image -= midrange_value
     components = 3 if len(input_image.shape) == 3 else 1
+    transform = transform_type.value
+    forward_dwt = {DwtType.Haar: forward_haar_dwt, DwtType.LeGall5_3: forward_legall_5_3_dwt}
+    inverse_dwt = {DwtType.Haar: inverse_haar_dwt, DwtType.LeGall5_3: inverse_legall_5_3_dwt}
 
     # Perform forward DWT over the number of given levels
     subbands = []
     current_ll = input_image
     for level in range(levels):
-        ll, hl, lh, hh = forward_haar_dwt(current_ll)
+        ll, hl, lh, hh = forward_dwt[transform_type](current_ll)
         if level == levels - 1:
             current_sbs = [ll, hl, lh, hh]
         else:
@@ -100,19 +103,8 @@ def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32], bitstream_name: 
 
     # Write out the bitstream
     with open(bitstream_name, "wb") as fh:
-        # Symbolic header
-        fh.write(symbolic_header.encode("ascii"))
-        # Image width and height
-        fh.write(int(cols).to_bytes(2, byteorder="little"))
-        fh.write(int(rows).to_bytes(2, byteorder="little"))
-        # Pixel bit depth and number of components
-        components_depth_byte = ((components & 0x03) << 4) | ((bitdepth - 8) & 0x0F)
-        fh.write(int(components_depth_byte).to_bytes(1, byteorder="little"))
-        # Decomposition levels and transform type
-        level_transform_byte = ((levels & 0x0F) << 4) | (transform & 0x03)
-        fh.write(int(level_transform_byte).to_bytes(1, byteorder="little"))
-        # QP
-        fh.write(int(qp).to_bytes(1, byteorder="little"))
+        ips = ImageParameterSet(rows=rows, cols=cols, components=components, bitdepth=bitdepth, levels=levels, transform=transform, qp=qp)
+        write_ips(fh, ips)
 
         # Decomposition levels, subbands and levels
         for current_level in payload_levels:
@@ -145,9 +137,9 @@ def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32], bitstream_name: 
         for level in range(levels - 1, -1, -1):
             current_sbs = subbands_r[level]
             if level == levels - 1:
-                current_ll = inverse_haar_dwt(current_sbs[0], current_sbs[1], current_sbs[2], current_sbs[3])
+                current_ll = inverse_dwt[transform_type](current_sbs[0], current_sbs[1], current_sbs[2], current_sbs[3])
             else:
-                current_ll = inverse_haar_dwt(current_ll, current_sbs[0], current_sbs[1], current_sbs[2])
+                current_ll = inverse_dwt[transform_type](current_ll, current_sbs[0], current_sbs[1], current_sbs[2])
 
         reconstructed_image = current_ll + midrange_value
         reconstructed_image = np.clip(reconstructed_image, 0, max_value)
@@ -178,7 +170,7 @@ if __name__ == "__main__":
     cl_parser.add_argument("-q", "--quantisation", type=int, default=22, help="Quantisation parameter in the range [0, 51] inclusive")
     cl_parser.add_argument("-b", "--bitdepth", type=int, default=8, help="Input bitdepth in the range [8, 12] inclusive")
     cl_parser.add_argument("-l", "--levels", type=int, default=5, help="Number of decomposition levels in the range [1, 5]. Mallat (aka packed) decomposition is assumed")
-    cl_parser.add_argument("-t", "--transform", type=int, default=0, help="Transform type")
+    cl_parser.add_argument("-t", "--transform", type=DwtType.from_string, choices=list(DwtType), default=DwtType.Haar, help="Transform type")
     cl_parser.add_argument("--reconstructed", type=str, default="", help="Dump the reconstructed file in yuv, png or bmp format for comparison purposes")
     supported_recon = (".yuv", ".png", ".bmp")
 
@@ -233,6 +225,7 @@ if __name__ == "__main__":
     print(f"Bitstream: {args.output}")
     print(f"Quantisation parameter: {args.quantisation}")
     print(f"Decomposition levels: {args.levels}")
+    print(f"DWT: {args.transform}")
     if args.reconstructed:
         print(f"Reconstructed file: {args.reconstructed}")
 

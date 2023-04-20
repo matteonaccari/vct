@@ -42,8 +42,26 @@ THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
 import numpy as np
-from typing import Any, Tuple
+from typing import Any, List, Tuple
 from nptyping import NDArray
+from enum import IntEnum
+
+
+class DwtType(IntEnum):
+    Haar = 0,
+    LeGall5_3 = 1,
+    CDF9_7 = 2
+
+    def __str__(self):
+        return self.name
+
+    @staticmethod
+    def from_string(s):
+        try:
+            return DwtType[s]
+        except KeyError:
+            raise ValueError()
+
 
 '''
 Haar Wavelet
@@ -125,5 +143,144 @@ def inverse_haar_dwt(ll: NDArray[(Any, Any, Any), np.int32],
         # Transform on columns
         samples[:, ::2] = samples[:, ::2] - samples[:, 1::2] // 2
         samples[:, 1::2] = samples[:, 1::2] + samples[:, ::2]
+
+    return samples
+
+
+'''
+LeGall 5/3 Wavelet
+'''
+
+
+def extend_1D(samples_1D: NDArray[(Any), np.int32], table_left: List[int] = [2, 1],
+              table_right: List[int] = [1, 2]) -> Tuple[NDArray[(Any), np.int32], int]:
+    i0, i1 = 0, samples_1D.size
+    i_left, i_right = table_left[i0 & 1], table_right[i1 & 1]
+
+    samples_1D_ext = np.pad(samples_1D, (i_left, i_right), "reflect")
+    return samples_1D_ext, i_left
+
+
+def forward_filter_5_3(samples_ext: NDArray[(Any), np.int32], i0: int, i1: int, i_left: int) -> NDArray[(Any), np.int32]:
+    samples_filtered = np.zeros_like(samples_ext)
+    n_start, n_stop = (i0 + 1) // 2 - 1, (i1 + 1) // 2
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    samples_filtered[i_left + 2 * n + 1] = samples_ext[i_left + 2 * n + 1] - ((samples_ext[i_left + 2 * n] + samples_ext[i_left + 2 * n + 2]) // 2)
+
+    n_start = (i0 + 1) // 2 - 1
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    samples_filtered[i_left + 2 * n] = samples_ext[i_left + 2 * n] + ((samples_filtered[i_left + 2 * n - 1] + samples_filtered[i_left + 2 * n + 1] + 2) // 4)
+    return samples_filtered[i0 + i_left:i1 + i_left]
+
+
+def inverse_filter_5_3(samples_ext: NDArray[(Any), np.int32], i0: int, i1: int, i_left: int) -> NDArray[(Any), np.int32]:
+    samples_filtered = np.zeros_like(samples_ext)
+    n_start, n_stop = i0 // 2, i1 // 2 + 1
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    samples_filtered[i_left + 2 * n] = samples_ext[i_left + 2 * n] - (samples_ext[i_left + 2 * n - 1] + samples_ext[i_left + 2 * n + 1] + 2) // 4
+
+    n_stop = i1 // 2
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    samples_filtered[i_left + 2 * n + 1] = samples_ext[i_left + 2 * n + 1] + (samples_filtered[i_left + 2 * n] + samples_filtered[i_left + 2 * n + 2]) // 2
+    return samples_filtered[i0 + i_left:i1 + i_left]
+
+
+def forward_legall_5_3_dwt(image: NDArray[(Any, Any, Any), np.int32]) -> Tuple[NDArray[(Any, Any, Any), np.int32],
+                                                                               NDArray[(Any, Any, Any), np.int32],
+                                                                               NDArray[(Any, Any, Any), np.int32],
+                                                                               NDArray[(Any, Any, Any), np.int32]]:
+    rows, cols = image.shape[0], image.shape[1]
+    components = 3 if len(image.shape) == 3 else 1
+    if components == 3:
+        coefficients = np.zeros((rows, cols, components), np.int32)
+    else:
+        coefficients = np.zeros((rows, cols), np.int32)
+
+    # Transform on columns
+    for c in range(cols):
+        for comp in range(components):
+            samples_column = image[:, c, comp] if components > 1 else image[:, c]
+            # Extend
+            samples_column_ext, i_left = extend_1D(samples_column)
+
+            # Apply LeGall 5/3 filter with lifting
+            filtered_column = forward_filter_5_3(samples_column_ext, 0, samples_column.size, i_left)
+            if components == 1:
+                coefficients[:, c] = filtered_column
+            else:
+                coefficients[:, c, comp] = filtered_column
+
+    # Transform on rows
+    for r in range(rows):
+        for comp in range(components):
+            samples_row = coefficients[r, :, comp] if components > 1 else coefficients[r, :]
+            # Extend
+            samples_row_ext, i_left = extend_1D(samples_row)
+
+            # Apply LeGall 5/2 filter with lifting
+            filtered_row = forward_filter_5_3(samples_row_ext, 0, samples_row.size, i_left)
+            if components == 1:
+                coefficients[r, :] = filtered_row
+            else:
+                coefficients[r, :, comp] = filtered_row
+
+    # Deinterleaving
+    ll = coefficients[::2, ::2]
+    hl = coefficients[::2, 1::2]
+    lh = coefficients[1::2, ::2]
+    hh = coefficients[1::2, 1::2]
+
+    return ll, hl, lh, hh
+
+
+def inverse_legall_5_3_dwt(ll: NDArray[(Any, Any, Any), np.int32],
+                           hl: NDArray[(Any, Any, Any), np.int32],
+                           lh: NDArray[(Any, Any, Any), np.int32],
+                           hh: NDArray[(Any, Any, Any), np.int32]) -> NDArray[(Any, Any, Any), np.int32]:
+    rows, cols = ll.shape[0] << 1, ll.shape[1] << 1
+    if len(ll.shape) == 3:
+        samples = np.zeros((rows, cols, 3), np.int32)
+        components = 3
+    else:
+        samples = np.zeros((rows, cols), np.int32)
+        components = 1
+
+    # Interleaving
+    samples[::2, ::2] = ll
+    samples[::2, 1::2] = hl
+    samples[1::2, ::2] = lh
+    samples[1::2, 1::2] = hh
+
+    # Transform on rows
+    for r in range(rows):
+        for comp in range(components):
+            coefficients_row = samples[r, :, comp] if components > 1 else samples[r, :]
+
+            # Extend
+            coefficients_row_ext, i_left = extend_1D(coefficients_row, [1, 2], [2, 1])
+
+            # Filter
+            filtered_row = inverse_filter_5_3(coefficients_row_ext, 0, coefficients_row.size, i_left)
+
+            if components == 1:
+                samples[r, :] = filtered_row
+            else:
+                samples[r, :, comp] = filtered_row
+
+    # Transform on columns
+    for c in range(cols):
+        for comp in range(components):
+            coefficients_column = samples[:, c, comp] if components > 1 else samples[:, c]
+
+            # Extend
+            coefficients_column_ext, i_left = extend_1D(coefficients_column, [1, 2], [2, 1])
+
+            # Filter
+            filtered_column = inverse_filter_5_3(coefficients_column_ext, 0, coefficients_column.size, i_left)
+
+            if components == 1:
+                samples[:, c] = filtered_column
+            else:
+                samples[:, c, comp] = filtered_column
 
     return samples
