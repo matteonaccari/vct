@@ -63,6 +63,21 @@ class DwtType(IntEnum):
             raise ValueError()
 
 
+class Direction(IntEnum):
+    Horizontal = 0,
+    Vertical = 1
+
+    def __str__(self):
+        return self.name
+
+    @staticmethod
+    def from_string(s):
+        try:
+            return DwtType[s]
+        except KeyError:
+            raise ValueError()
+
+
 '''
 Haar Wavelet
 '''
@@ -152,37 +167,56 @@ LeGall 5/3 Wavelet
 '''
 
 
-def extend_1D(samples_1D: NDArray[(Any), np.int32], table_left: List[int] = [2, 1],
-              table_right: List[int] = [1, 2]) -> Tuple[NDArray[(Any), np.int32], int]:
-    i0, i1 = 0, samples_1D.size
+def extend(samples_2D: NDArray[(Any, Any, Any), np.int32], table_left: List[int] = [2, 1],
+           table_right: List[int] = [1, 2], d: Direction = Direction.Vertical) -> Tuple[NDArray[(Any, Any, Any), np.int32], int]:
+    i0, i1 = 0, samples_2D.shape[0] if d == Direction.Vertical else samples_2D.shape[1]
+    components = 1 if len(samples_2D.shape) == 2 else 3
     i_left, i_right = table_left[i0 & 1], table_right[i1 & 1]
 
-    samples_1D_ext = np.pad(samples_1D, (i_left, i_right), "reflect")
-    return samples_1D_ext, i_left
+    extension_params = [[i_left, i_right], [0, 0]] if d == Direction.Vertical else [[0, 0], [i_left, i_right]]
+    if components > 1:
+        extension_params += [[0, 0]]
+    samples_2D_ext = np.pad(samples_2D, extension_params, "reflect")
+
+    return samples_2D_ext, i_left
 
 
-def forward_filter_5_3(samples_ext: NDArray[(Any), np.int32], i0: int, i1: int, i_left: int) -> NDArray[(Any), np.int32]:
+def forward_filter_5_3(samples_ext: NDArray[(Any, Any, Any), np.int32], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[(Any, Any, Any), np.int32]:
     samples_filtered = np.zeros_like(samples_ext)
     n_start, n_stop = (i0 + 1) // 2 - 1, (i1 + 1) // 2
     n = np.array([i for i in range(n_start, n_stop)], np.int32)
-    samples_filtered[i_left + 2 * n + 1] = samples_ext[i_left + 2 * n + 1] - ((samples_ext[i_left + 2 * n] + samples_ext[i_left + 2 * n + 2]) // 2)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n + 1, :] = samples_ext[i_left + 2 * n + 1, :] - ((samples_ext[i_left + 2 * n, :] + samples_ext[i_left + 2 * n + 2, :]) // 2)
+    else:
+        samples_filtered[:, i_left + 2 * n + 1] = samples_ext[:, i_left + 2 * n + 1] - ((samples_ext[:, i_left + 2 * n] + samples_ext[:, i_left + 2 * n + 2]) // 2)
 
     n_start = (i0 + 1) // 2 - 1
     n = np.array([i for i in range(n_start, n_stop)], np.int32)
-    samples_filtered[i_left + 2 * n] = samples_ext[i_left + 2 * n] + ((samples_filtered[i_left + 2 * n - 1] + samples_filtered[i_left + 2 * n + 1] + 2) // 4)
-    return samples_filtered[i0 + i_left:i1 + i_left]
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n, :] = samples_ext[i_left + 2 * n, :] + ((samples_filtered[i_left + 2 * n - 1, :] + samples_filtered[i_left + 2 * n + 1, :] + 2) // 4)
+        return samples_filtered[i0 + i_left:i1 + i_left, :]
+    else:
+        samples_filtered[:, i_left + 2 * n] = samples_ext[:, i_left + 2 * n] + ((samples_filtered[:, i_left + 2 * n - 1] + samples_filtered[:, i_left + 2 * n + 1] + 2) // 4)
+        return samples_filtered[:, i0 + i_left:i1 + i_left]
 
 
-def inverse_filter_5_3(samples_ext: NDArray[(Any), np.int32], i0: int, i1: int, i_left: int) -> NDArray[(Any), np.int32]:
+def inverse_filter_5_3(samples_ext: NDArray[(Any, Any, Any), np.int32], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[(Any, Any, Any), np.int32]:
     samples_filtered = np.zeros_like(samples_ext)
     n_start, n_stop = i0 // 2, i1 // 2 + 1
     n = np.array([i for i in range(n_start, n_stop)], np.int32)
-    samples_filtered[i_left + 2 * n] = samples_ext[i_left + 2 * n] - (samples_ext[i_left + 2 * n - 1] + samples_ext[i_left + 2 * n + 1] + 2) // 4
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n, :] = samples_ext[i_left + 2 * n, :] - (samples_ext[i_left + 2 * n - 1, :] + samples_ext[i_left + 2 * n + 1, :] + 2) // 4
+    else:
+        samples_filtered[:, i_left + 2 * n] = samples_ext[:, i_left + 2 * n] - (samples_ext[:, i_left + 2 * n - 1] + samples_ext[:, i_left + 2 * n + 1] + 2) // 4
 
     n_stop = i1 // 2
     n = np.array([i for i in range(n_start, n_stop)], np.int32)
-    samples_filtered[i_left + 2 * n + 1] = samples_ext[i_left + 2 * n + 1] + (samples_filtered[i_left + 2 * n] + samples_filtered[i_left + 2 * n + 2]) // 2
-    return samples_filtered[i0 + i_left:i1 + i_left]
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n + 1, :] = samples_ext[i_left + 2 * n + 1, :] + (samples_filtered[i_left + 2 * n, :] + samples_filtered[i_left + 2 * n + 2, :]) // 2
+        return samples_filtered[i0 + i_left:i1 + i_left, :]
+    else:
+        samples_filtered[:, i_left + 2 * n + 1] = samples_ext[:, i_left + 2 * n + 1] + (samples_filtered[:, i_left + 2 * n] + samples_filtered[:, i_left + 2 * n + 2]) // 2
+        return samples_filtered[:, i0 + i_left:i1 + i_left]
 
 
 def forward_legall_5_3_dwt(image: NDArray[(Any, Any, Any), np.int32]) -> Tuple[NDArray[(Any, Any, Any), np.int32],
@@ -190,39 +224,18 @@ def forward_legall_5_3_dwt(image: NDArray[(Any, Any, Any), np.int32]) -> Tuple[N
                                                                                NDArray[(Any, Any, Any), np.int32],
                                                                                NDArray[(Any, Any, Any), np.int32]]:
     rows, cols = image.shape[0], image.shape[1]
-    components = 3 if len(image.shape) == 3 else 1
-    if components == 3:
-        coefficients = np.zeros((rows, cols, components), np.int32)
-    else:
-        coefficients = np.zeros((rows, cols), np.int32)
 
     # Transform on columns
-    for c in range(cols):
-        for comp in range(components):
-            samples_column = image[:, c, comp] if components > 1 else image[:, c]
-            # Extend
-            samples_column_ext, i_left = extend_1D(samples_column)
-
-            # Apply LeGall 5/3 filter with lifting
-            filtered_column = forward_filter_5_3(samples_column_ext, 0, samples_column.size, i_left)
-            if components == 1:
-                coefficients[:, c] = filtered_column
-            else:
-                coefficients[:, c, comp] = filtered_column
+    # Extend
+    image_ext, i_left = extend(image)
+    # Apply LeGall 5/3 filter with lifting
+    coefficients = forward_filter_5_3(image_ext, 0, rows, i_left)
 
     # Transform on rows
-    for r in range(rows):
-        for comp in range(components):
-            samples_row = coefficients[r, :, comp] if components > 1 else coefficients[r, :]
-            # Extend
-            samples_row_ext, i_left = extend_1D(samples_row)
-
-            # Apply LeGall 5/2 filter with lifting
-            filtered_row = forward_filter_5_3(samples_row_ext, 0, samples_row.size, i_left)
-            if components == 1:
-                coefficients[r, :] = filtered_row
-            else:
-                coefficients[r, :, comp] = filtered_row
+    # Extend
+    coefficients_ext, i_left = extend(coefficients, d=Direction.Horizontal)
+    # Apply LeGall 5/3 filter with lifting
+    coefficients = forward_filter_5_3(coefficients_ext, 0, cols, i_left, Direction.Horizontal)
 
     # Deinterleaving
     ll = coefficients[::2, ::2]
@@ -240,10 +253,8 @@ def inverse_legall_5_3_dwt(ll: NDArray[(Any, Any, Any), np.int32],
     rows, cols = ll.shape[0] << 1, ll.shape[1] << 1
     if len(ll.shape) == 3:
         samples = np.zeros((rows, cols, 3), np.int32)
-        components = 3
     else:
         samples = np.zeros((rows, cols), np.int32)
-        components = 1
 
     # Interleaving
     samples[::2, ::2] = ll
@@ -252,35 +263,14 @@ def inverse_legall_5_3_dwt(ll: NDArray[(Any, Any, Any), np.int32],
     samples[1::2, 1::2] = hh
 
     # Transform on rows
-    for r in range(rows):
-        for comp in range(components):
-            coefficients_row = samples[r, :, comp] if components > 1 else samples[r, :]
-
-            # Extend
-            coefficients_row_ext, i_left = extend_1D(coefficients_row, [1, 2], [2, 1])
-
-            # Filter
-            filtered_row = inverse_filter_5_3(coefficients_row_ext, 0, coefficients_row.size, i_left)
-
-            if components == 1:
-                samples[r, :] = filtered_row
-            else:
-                samples[r, :, comp] = filtered_row
+    # Extend
+    samples_ext, i_left = extend(samples, [1, 2], [2, 1], Direction.Horizontal)
+    # Filter
+    samples = inverse_filter_5_3(samples_ext, 0, cols, i_left, Direction.Horizontal)
 
     # Transform on columns
-    for c in range(cols):
-        for comp in range(components):
-            coefficients_column = samples[:, c, comp] if components > 1 else samples[:, c]
-
-            # Extend
-            coefficients_column_ext, i_left = extend_1D(coefficients_column, [1, 2], [2, 1])
-
-            # Filter
-            filtered_column = inverse_filter_5_3(coefficients_column_ext, 0, coefficients_column.size, i_left)
-
-            if components == 1:
-                samples[:, c] = filtered_column
-            else:
-                samples[:, c, comp] = filtered_column
+    samples_ext, i_left = extend(samples, [1, 2], [2, 1])
+    # Filter
+    samples = inverse_filter_5_3(samples_ext, 0, rows, i_left)
 
     return samples
