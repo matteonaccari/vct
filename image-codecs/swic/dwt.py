@@ -41,10 +41,11 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-import numpy as np
-from typing import Any, List, Tuple
-from nptyping import NDArray
 from enum import IntEnum
+from typing import Any, List, Tuple
+
+import numpy as np
+from nptyping import NDArray
 
 
 class DwtType(IntEnum):
@@ -272,5 +273,176 @@ def inverse_legall_5_3_dwt(ll: NDArray[(Any, Any, Any), np.int32],
     samples_ext, i_left = extend(samples, [1, 2], [2, 1])
     # Filter
     samples = inverse_filter_5_3(samples_ext, 0, rows, i_left)
+
+    return samples
+
+
+'''
+Cohen Dabeuchies Feauveau (CDF) 9/7 Wavelet
+'''
+alpha, beta, gamma, delta, K = -1.586134342059924, -0.052980118572961, 0.882911075530934, 0.443506852043971, 1.230174104914001
+
+
+def forward_filter_9_7(samples_ext: NDArray[(Any, Any, Any), np.float64], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[(Any, Any, Any), np.float64]:
+    samples_filtered = np.zeros(samples_ext.shape)
+
+    # Step 1
+    n_start, n_stop = ((i0 + 1) >> 1) - 2, ((i1 + 1) >> 1) + 1
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n + 1, :] = samples_ext[i_left + 2 * n + 1, :] + alpha * (samples_ext[i_left + 2 * n, :] + samples_ext[i_left + 2 * n + 2, :])
+    else:
+        samples_filtered[:, i_left + 2 * n + 1] = samples_ext[:, i_left + 2 * n + 1] + alpha * (samples_ext[:, i_left + 2 * n] + samples_ext[:, i_left + 2 * n + 2])
+
+    # Step 2
+    n_start, n_stop = ((i0 + 1) >> 1) - 1, ((i1 + 1) >> 1) + 1
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n, :] = samples_ext[i_left + 2 * n, :] + beta * (samples_filtered[i_left + 2 * n - 1, :] + samples_filtered[i_left + 2 * n + 1, :])
+    else:
+        samples_filtered[:, i_left + 2 * n] = samples_ext[:, i_left + 2 * n] + beta * (samples_filtered[:, i_left + 2 * n - 1] + samples_filtered[:, i_left + 2 * n + 1])
+
+    # Step 3
+    n_start, n_stop = ((i0 + 1) >> 1) - 1, ((i1 + 1) >> 1)
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n + 1, :] += gamma * (samples_filtered[i_left + 2 * n, :] + samples_filtered[i_left + 2 * n + 2, :])
+    else:
+        samples_filtered[:, i_left + 2 * n + 1] += gamma * (samples_filtered[:, i_left + 2 * n] + samples_filtered[:, i_left + 2 * n + 2])
+
+    # Step 4
+    n_start, n_stop = ((i0 + 1) >> 1), ((i1 + 1) >> 1)
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n, :] += delta * (samples_filtered[i_left + 2 * n - 1, :] + samples_filtered[i_left + 2 * n + 1, :])
+    else:
+        samples_filtered[:, i_left + 2 * n] += delta * (samples_filtered[:, i_left + 2 * n - 1] + samples_filtered[:, i_left + 2 * n + 1])
+
+    # Step 5
+    n_start = ((i0 + 1) >> 1) - 1
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n + 1, :] *= K
+    else:
+        samples_filtered[:, i_left + 2 * n + 1] *= K
+
+    # Step 6
+    n_start = ((i0 + 1) >> 1)
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n, :] *= (1 / K)
+        return samples_filtered[i_left + i0:i1 + i_left, :]
+    else:
+        samples_filtered[:, i_left + 2 * n] *= (1 / K)
+        return samples_filtered[:, i_left + i0:i1 + i_left]
+
+
+def inverse_filter_9_7(samples_ext: NDArray[(Any, Any, Any), np.float64], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[(Any, Any, Any), np.float64]:
+    samples_filtered = np.zeros(samples_ext.shape)
+
+    # Step 1
+    n_start, n_stop = (i0 >> 1) - 1, (i1 >> 1) + 2
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n, :] = K * samples_ext[i_left + 2 * n, :]
+    else:
+        samples_filtered[:, i_left + 2 * n] = K * samples_ext[:, i_left + 2 * n]
+
+    # Step 2
+    n_start, n_stop = (i0 >> 1) - 2, (i1 >> 1) + 2
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n + 1, :] = (1 / K) * samples_ext[i_left + 2 * n + 1, :]
+    else:
+        samples_filtered[:, i_left + 2 * n + 1] = (1 / K) * samples_ext[:, i_left + 2 * n + 1]
+
+    # Step 3
+    n_start, n_stop = (i0 >> 1) - 1, (i1 >> 1) + 2
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n, :] -= delta * (samples_filtered[i_left + 2 * n - 1, :] + samples_filtered[i_left + 2 * n + 1, :])
+    else:
+        samples_filtered[:, i_left + 2 * n] -= delta * (samples_filtered[:, i_left + 2 * n - 1] + samples_filtered[:, i_left + 2 * n + 1])
+
+    # Step 4
+    n_start, n_stop = (i0 >> 1) - 1, (i1 >> 1) + 1
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n + 1, :] -= gamma * (samples_filtered[i_left + 2 * n, :] + samples_filtered[i_left + 2 * n + 2, :])
+    else:
+        samples_filtered[:, i_left + 2 * n + 1] -= gamma * (samples_filtered[:, i_left + 2 * n] + samples_filtered[:, i_left + 2 * n + 2])
+
+    # Step 5
+    n_start, n_stop = i0 >> 1, (i1 >> 1) + 1
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n, :] -= beta * (samples_filtered[i_left + 2 * n - 1, :] + samples_filtered[i_left + 2 * n + 1, :])
+    else:
+        samples_filtered[:, i_left + 2 * n] -= beta * (samples_filtered[:, i_left + 2 * n - 1] + samples_filtered[:, i_left + 2 * n + 1])
+
+    # Step 6
+    n_start, n_stop = i0 >> 1, i1 >> 1
+    n = np.array([i for i in range(n_start, n_stop)], np.int32)
+    if d == Direction.Vertical:
+        samples_filtered[i_left + 2 * n + 1, :] -= alpha * (samples_filtered[i_left + 2 * n, :] + samples_filtered[i_left + 2 * n + 2, :])
+        return samples_filtered[i_left + i0:i1 + i_left, :]
+    else:
+        samples_filtered[:, i_left + 2 * n + 1] -= alpha * (samples_filtered[:, i_left + 2 * n] + samples_filtered[:, i_left + 2 * n + 2])
+        return samples_filtered[:, i_left + i0:i1 + i_left]
+
+
+def forward_cdf_9_7_dwt(image: NDArray[(Any, Any, Any), np.int32]) -> Tuple[NDArray[(Any, Any, Any), np.float64],
+                                                                            NDArray[(Any, Any, Any), np.int32],
+                                                                            NDArray[(Any, Any, Any), np.int32],
+                                                                            NDArray[(Any, Any, Any), np.int32]]:
+    rows, cols = image.shape[0], image.shape[1]
+
+    # Transform on columns
+    # Extend
+    image_ext, i_left = extend(image, [4, 3], [3, 4])
+    # Apply CDF 9/7 filter with lifting
+    coefficients = forward_filter_9_7(image_ext, 0, rows, i_left)
+
+    # Transform on rows
+    # Extend
+    coefficients_ext, i_left = extend(coefficients, [4, 3], [3, 4], d=Direction.Horizontal)
+    # Apply CDF 9/7 filter with lifting
+    coefficients = forward_filter_9_7(coefficients_ext, 0, cols, i_left, Direction.Horizontal)
+
+    # Deinterleaving
+    ll = coefficients[::2, ::2]
+    hl = (np.round(coefficients[::2, 1::2])).astype(np.int32)
+    lh = (np.round(coefficients[1::2, ::2])).astype(np.int32)
+    hh = (np.round(coefficients[1::2, 1::2])).astype(np.int32)
+
+    return ll, hl, lh, hh
+
+
+def inverse_cdf_9_7_dwt(ll: NDArray[(Any, Any, Any), np.float64],
+                        hl: NDArray[(Any, Any, Any), np.float64],
+                        lh: NDArray[(Any, Any, Any), np.float64],
+                        hh: NDArray[(Any, Any, Any), np.float64]) -> NDArray[(Any, Any, Any), np.float64]:
+    rows, cols = ll.shape[0] << 1, ll.shape[1] << 1
+    if len(ll.shape) == 3:
+        samples = np.zeros((rows, cols, 3), np.float64)
+    else:
+        samples = np.zeros((rows, cols), np.float64)
+
+    # Interleaving
+    samples[::2, ::2] = ll.astype(np.float64)
+    samples[::2, 1::2] = hl.astype(np.float64)
+    samples[1::2, ::2] = lh.astype(np.float64)
+    samples[1::2, 1::2] = hh.astype(np.float64)
+
+    # Transform on rows
+    # Extend
+    samples_ext, i_left = extend(samples, [3, 4], [4, 3], Direction.Horizontal)
+    # Filter
+    samples = inverse_filter_9_7(samples_ext, 0, cols, i_left, Direction.Horizontal)
+
+    # Transform on columns
+    samples_ext, i_left = extend(samples, [3, 4], [4, 3])
+    # Filter
+    samples = inverse_filter_9_7(samples_ext, 0, rows, i_left)
 
     return samples
