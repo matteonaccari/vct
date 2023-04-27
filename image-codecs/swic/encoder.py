@@ -38,29 +38,36 @@ THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
 import sys
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from ct import rgb_to_ycbcr_bt709, ycbcr_to_rgb_bt709
-from pathlib import Path
-import numpy as np
-import cv2
-from typing import Any, Tuple
-from nptyping import NDArray
 import time
-from dwt import forward_haar_dwt, inverse_haar_dwt, DwtType, forward_legall_5_3_dwt, inverse_legall_5_3_dwt
-from quantiser import quantise_plane, reconstruct_plane
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
+from typing import Any, Tuple
+
+import cv2
+import numpy as np
+from nptyping import NDArray
+
+from ct import rgb_to_ycbcr_bt709, ycbcr_to_rgb_bt709
+from dwt import (
+    DwtType, forward_cdf_9_7_dwt, forward_haar_dwt, forward_legall_5_3_dwt,
+    inverse_cdf_9_7_dwt, inverse_haar_dwt, inverse_legall_5_3_dwt)
 from entropy import encode_subband
 from hls import ImageParameterSet, write_ips
+from quantiser import quantise_plane, reconstruct_plane
 
 
-def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32], bitstream_name: str, qp: int, bitdepth: int, levels: int, transform_type: DwtType, reconstruction_needed: bool) -> Tuple[int, NDArray[(Any, Any, Any), np.int32]]:
+def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32],
+                 bitstream_name: str, qp: int, bitdepth: int,
+                 levels: int, transform_type: DwtType,
+                 reconstruction_needed: bool) -> Tuple[int, NDArray[(Any, Any, Any), np.int32]]:
     # Remove mid range value from input data
     midrange_value = 1 << (bitdepth - 1)
     max_value = (1 << bitdepth) - 1
     input_image -= midrange_value
     components = 3 if len(input_image.shape) == 3 else 1
     transform = transform_type.value
-    forward_dwt = {DwtType.Haar: forward_haar_dwt, DwtType.LeGall5_3: forward_legall_5_3_dwt}
-    inverse_dwt = {DwtType.Haar: inverse_haar_dwt, DwtType.LeGall5_3: inverse_legall_5_3_dwt}
+    forward_dwt = {DwtType.Haar: forward_haar_dwt, DwtType.LeGall5_3: forward_legall_5_3_dwt, DwtType.CDF9_7: forward_cdf_9_7_dwt}
+    inverse_dwt = {DwtType.Haar: inverse_haar_dwt, DwtType.LeGall5_3: inverse_legall_5_3_dwt, DwtType.CDF9_7: inverse_cdf_9_7_dwt}
 
     # Perform forward DWT over the number of given levels
     subbands = []
@@ -68,6 +75,8 @@ def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32], bitstream_name: 
     for level in range(levels):
         ll, hl, lh, hh = forward_dwt[transform_type](current_ll)
         if level == levels - 1:
+            if transform_type == DwtType.CDF9_7:
+                ll = np.round(ll).astype(np.int32)
             current_sbs = [ll, hl, lh, hh]
         else:
             current_sbs = [hl, lh, hh]
@@ -141,6 +150,8 @@ def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32], bitstream_name: 
             else:
                 current_ll = inverse_dwt[transform_type](current_ll, current_sbs[0], current_sbs[1], current_sbs[2])
 
+        if transform_type == DwtType.CDF9_7:
+            current_ll = np.round(current_ll).astype(np.int32)
         reconstructed_image = current_ll + midrange_value
         reconstructed_image = np.clip(reconstructed_image, 0, max_value)
 

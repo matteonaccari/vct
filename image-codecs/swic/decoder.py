@@ -38,18 +38,21 @@ THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
 import sys
+import time
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
-import numpy as np
 from typing import Any
-from nptyping import NDArray
-import time
-from dwt import DwtType, inverse_haar_dwt, inverse_legall_5_3_dwt
-from quantiser import reconstruct_plane
-from entropy import code_block_size, decode_subband
-from ct import ycbcr_to_rgb_bt709
+
 import cv2
+import numpy as np
+from nptyping import NDArray
+
+from ct import ycbcr_to_rgb_bt709
+from dwt import (DwtType, inverse_cdf_9_7_dwt, inverse_haar_dwt,
+                 inverse_legall_5_3_dwt)
+from entropy import code_block_size, decode_subband
 from hls import read_ips
+from quantiser import reconstruct_plane
 
 
 def swic_decoder(bitstream_file: str, levels_to_decode: int) -> NDArray[(Any, Any, 3), np.int32]:
@@ -120,7 +123,7 @@ def swic_decoder(bitstream_file: str, levels_to_decode: int) -> NDArray[(Any, An
     midrange_value = 1 << (ips.bitdepth - 1)
 
     # Inverse transform
-    inverse_dwt = {DwtType.Haar: inverse_haar_dwt, DwtType.LeGall5_3: inverse_legall_5_3_dwt}
+    inverse_dwt = {DwtType.Haar: inverse_haar_dwt, DwtType.LeGall5_3: inverse_legall_5_3_dwt, DwtType.CDF9_7: inverse_cdf_9_7_dwt}
     for level in range(levels_to_decode):
         subbands = coefficients_r[level]
         if not level:
@@ -128,6 +131,8 @@ def swic_decoder(bitstream_file: str, levels_to_decode: int) -> NDArray[(Any, An
         else:
             current_ll = inverse_dwt[transform_type](current_ll, subbands[0], subbands[1], subbands[2])
 
+    if transform_type == DwtType.CDF9_7:
+        current_ll = np.round(current_ll).astype(np.int32)
     decoded_image = current_ll + midrange_value
     decoded_image = np.clip(decoded_image, 0, max_value)
 
