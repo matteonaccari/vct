@@ -56,14 +56,14 @@ from hls import ImageParameterSet, write_ips
 from quantiser import quantise_plane, reconstruct_plane
 
 
-def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32],
+def swic_encoder(input_image: NDArray[(Any, Any, Any), np.int32],
                  bitstream_name: str, qp: int, bitdepth: int,
                  levels: int, transform_type: DwtType,
                  reconstruction_needed: bool) -> Tuple[int, NDArray[(Any, Any, Any), np.int32]]:
     # Remove mid range value from input data
     midrange_value = 1 << (bitdepth - 1)
     max_value = (1 << bitdepth) - 1
-    input_image -= midrange_value
+    rows, cols = input_image.shape[0], input_image.shape[1]
     components = 3 if len(input_image.shape) == 3 else 1
     transform = transform_type.value
     forward_dwt = {DwtType.Haar: forward_haar_dwt, DwtType.LeGall5_3: forward_legall_5_3_dwt, DwtType.CDF9_7: forward_cdf_9_7_dwt}
@@ -71,7 +71,7 @@ def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32],
 
     # Perform forward DWT over the number of given levels
     subbands = []
-    current_ll = input_image
+    current_ll = input_image - midrange_value
     for level in range(levels):
         ll, hl, lh, hh = forward_dwt[transform_type](current_ll)
         if level == levels - 1:
@@ -88,14 +88,14 @@ def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32],
     subbands_q = []
     for level in range(levels):
         current_levq = []
-        shift = (level)
-        for sb in subbands[level]:
+        shift = [level, level, 2 * level] if level != levels - 1 else [level, level, level, 2 * level]
+        for sb_idx, sb in enumerate(subbands[level]):
             sbq = np.zeros(sb.shape, np.int32)
             if components > 1:
                 for comp in range(components):
-                    sbq[:, :, comp] = quantise_plane(sb[:, :, comp] << shift, qp)
+                    sbq[:, :, comp] = quantise_plane(sb[:, :, comp] << shift[sb_idx], qp)
             else:
-                sbq = quantise_plane(sb << shift, qp)
+                sbq = quantise_plane(sb << shift[sb_idx], qp)
             current_levq.append(sbq)
         subbands_q.append(current_levq)
 
@@ -130,16 +130,16 @@ def swic_encoder(input_image: NDArray[(Any, Any, 3), np.int32],
         subbands_r = []
         for level in range(levels):
             current_levr = []
-            shift = (level)
-            offset = 1 << (shift - 1) if shift else 0
-            for sb in subbands_q[level]:
+            shift = [level, level, 2 * level] if level != levels - 1 else [level, level, level, 2 * level]
+            for sb_idx, sb in enumerate(subbands_q[level]):
+                offset = 1 << (shift[sb_idx] - 1) if shift[sb_idx] else 0
                 sbr = np.zeros(sb.shape, np.int32)
                 if components > 1:
                     for comp in range(components):
                         sbr[:, :, comp] = reconstruct_plane(sb[:, :, comp], qp)
                 else:
                     sbr = reconstruct_plane(sb, qp)
-                current_levr.append((sbr + offset) >> shift)
+                current_levr.append((sbr + offset) >> shift[sb_idx])
             subbands_r.append(current_levr)
 
         # Inverse DWT

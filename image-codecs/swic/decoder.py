@@ -55,7 +55,7 @@ from hls import read_ips
 from quantiser import reconstruct_plane
 
 
-def swic_decoder(bitstream_file: str, levels_to_decode: int) -> NDArray[(Any, Any, 3), np.int32]:
+def swic_decoder(bitstream_file: str, levels_to_decode: int, verbose: bool = True) -> NDArray[(Any, Any, Any), np.int32]:
     # High level syntax parsing
     with open(bitstream_file, "rb") as fh:
         ips = read_ips(fh)
@@ -83,12 +83,13 @@ def swic_decoder(bitstream_file: str, levels_to_decode: int) -> NDArray[(Any, An
             payload_levels[level] = payload_sbs
 
     # Print out high level syntax information
-    print(f"Encoded image size: {ips.cols}x{ips.rows}")
-    print(f"Encoded image bit depth: {ips.bitdepth} [bpp]")
-    print(f"Encoded image number of components: {ips.components}")
-    print(f"Output image size: {ips.cols >> (ips.levels - levels_to_decode)}x{ips.rows >> (ips.levels - levels_to_decode)}")
-    print(f"Quantisation parameter: {ips.qp}")
-    print(f"Tranform: {transform_type}")
+    if verbose:
+        print(f"Encoded image size: {ips.cols}x{ips.rows}")
+        print(f"Encoded image bit depth: {ips.bitdepth} [bpp]")
+        print(f"Encoded image number of components: {ips.components}")
+        print(f"Output image size: {ips.cols >> (ips.levels - levels_to_decode)}x{ips.rows >> (ips.levels - levels_to_decode)}")
+        print(f"Quantisation parameter: {ips.qp}")
+        print(f"Transform: {transform_type}")
 
     # Entropy decoding
     coefficients = []
@@ -105,17 +106,18 @@ def swic_decoder(bitstream_file: str, levels_to_decode: int) -> NDArray[(Any, An
     # Inverse quantisation
     coefficients_r = []
     for level in range(levels_to_decode):
-        shift = ips.levels - level - 1
-        offset = 1 << (shift - 1) if shift else 0
+        base_shift = ips.levels - level - 1
+        shift = [base_shift, base_shift, base_shift, 2 * base_shift] if not level else [base_shift, base_shift, 2 * base_shift]
         current_level = coefficients[level]
         coefficients_sbs_r = []
         for sb_idx, sb in enumerate(current_level):
+            offset = 1 << (shift[sb_idx] - 1) if shift[sb_idx] else 0
             coefficients_sb_r = np.zeros(sb.shape, np.int32)
             if ips.components == 1:
-                coefficients_sb_r = (reconstruct_plane(sb, ips.qp) + offset) >> shift
+                coefficients_sb_r = (reconstruct_plane(sb, ips.qp) + offset) >> shift[sb_idx]
             else:
                 for comp in range(ips.components):
-                    coefficients_sb_r[:, :, comp] = (reconstruct_plane(sb[:, :, comp], ips.qp) + offset) >> shift
+                    coefficients_sb_r[:, :, comp] = (reconstruct_plane(sb[:, :, comp], ips.qp) + offset) >> shift[sb_idx]
             coefficients_sbs_r.append(coefficients_sb_r)
         coefficients_r.append(coefficients_sbs_r)
 

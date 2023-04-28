@@ -39,7 +39,7 @@ from nptyping import NDArray
 from bit_io import BitWriter, BitReader
 
 
-code_block_size, code_block_buffer_size = 32, 4096
+code_block_size, code_block_buffer_size = 32, 8192
 
 
 def egc0_encoding(value, bw: BitWriter) -> None:
