@@ -33,11 +33,12 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-import numpy as np
 from typing import Any, List
-from nptyping import NDArray
-from bit_io import BitWriter, BitReader
 
+import numpy as np
+from nptyping import NDArray
+
+from bit_io import BitReader, BitWriter
 
 code_block_size, code_block_buffer_size = 32, 8192
 

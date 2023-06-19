@@ -41,9 +41,10 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
+from typing import Any
+
 import numpy as np
 from nptyping import NDArray
-from typing import Any
 
 quantiser_scale = np.array([26214, 23302, 20560, 18396, 16384, 14564], np.int32)
 reconstruction_scale = np.array([40, 45, 51, 57, 64, 72], np.int32)

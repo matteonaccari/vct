@@ -33,11 +33,11 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-from nptyping import NDArray
-from typing import Any
 from ctypes import c_uint32
+from typing import Any
 
 import numpy as np
+from nptyping import NDArray
 
 
 class BitWriter:

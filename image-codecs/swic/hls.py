@@ -34,8 +34,8 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-from typing import BinaryIO
 from dataclasses import dataclass
+from typing import BinaryIO
 
 symbolic_header = "SWIC-V1"
 
