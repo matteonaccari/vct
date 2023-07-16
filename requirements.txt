@@ -1,9 +1,9 @@
 notebook
-numpy>=1.20.1
+numpy==1.20.1
 opencv-python>=4.5.1.48
 scipy>=1.6.1
 matplotlib>=3.4.1
-nptyping>=1.4.0
+nptyping==1.4.0
 dataclasses>=0.8
 huffman
 tabulate
