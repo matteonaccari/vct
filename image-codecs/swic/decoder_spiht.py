@@ -1,11 +1,8 @@
 '''
-Image decoding using different discrete wavelet transforms as frequency decomposition:
- * Haar Wavelet (with and w/o dynamic range expansion)
- * LeGall 5/3 as used in the JPEG 2000 (ITU-T T.800) standard for lossless encoding
- * Cohen Dabeuchies Feauveau (CDF) 9/7 as used in the JPEG 2000 standard for lossy
-   encoding
+Wavelet-based image decoding with quality scalability using the
+Set Partitioning In Hierarchical Trees (SPIHT) method.
 
-Copyright(c) 2023 Matteo Naccari
+Copyright(c) 2025 Matteo Naccari
 All Rights Reserved.
 
 email: matteo.naccari@gmail.com | matteo.naccari@polimi.it | matteo.naccari@lx.it.pt
@@ -44,19 +41,23 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from nptyping import NDArray, Shape
+
 from ct import ycbcr_to_rgb_bt709
 from dwt import (DwtType, inverse_cdf_9_7_dwt, inverse_haar_dwt,
                  inverse_legall_5_3_dwt)
-from entropy import code_block_size, decode_subband
+from entropy_spiht import compute_successor_map, decode_image_spiht
 from hls import read_ips
-from nptyping import NDArray, Shape
 from quantiser import reconstruct_plane
 
 
-def swic_decoder(bitstream_file: str, levels_to_decode: int, verbose: bool = True) -> NDArray[Shape["*, *, *"], np.int32]:
+def swic_decoder_spiht(bitstream_file: str, levels_to_decode: int, bpp: float, weighty: float, verbose: bool = True) -> NDArray[Shape["*, *, *"], np.int32]:
     # High level syntax parsing
     with open(bitstream_file, "rb") as fh:
         ips = read_ips(fh)
+        # Read and discard stuffing bytes
+        stuffing_bytes = int().from_bytes(fh.read(4), byteorder="little")
+        fh.seek(stuffing_bytes, 1)
         transform_type = DwtType(ips.transform)
         if ips.levels < levels_to_decode:
             print(f"Warning: levels required to be decoded ({levels_to_decode}) are more than the ones actually encoded ({ips.levels})")
@@ -64,22 +65,11 @@ def swic_decoder(bitstream_file: str, levels_to_decode: int, verbose: bool = Tru
         elif not levels_to_decode:
             levels_to_decode = ips.levels
 
-        # Load into memory all code block payloads
-        payload_levels = [None] * ips.levels
-        for level in range(levels_to_decode):
-            total_subbands = 4 if not level else 3
-            rows_sb, cols_sb = ips.rows >> (ips.levels - level), ips.cols >> (ips.levels - level)
-            rows_cb, cols_cb = (rows_sb + code_block_size - 1) // code_block_size, (cols_sb + code_block_size - 1) // code_block_size
-            total_cbs = rows_cb * cols_cb
+        # Load into memory the bitstream's payload
+        bitstream_payload = np.frombuffer(fh.read(), dtype=np.uint8)
 
-            payload_sbs = [None] * total_subbands
-            for sb_idx in range(total_subbands):
-                payload_sb = [None] * total_cbs
-                for cb_idx in range(total_cbs):
-                    cb_payload_size = int().from_bytes(fh.read(2), byteorder="little")
-                    payload_sb[cb_idx] = np.frombuffer(fh.read(cb_payload_size), dtype=np.uint8)
-                payload_sbs[sb_idx] = payload_sb
-            payload_levels[level] = payload_sbs
+    # Sort out how many bits to decode
+    bits_to_process = int(ips.rows * ips.cols * bpp + 0.5) if bpp else None
 
     # Print out high level syntax information
     if verbose:
@@ -90,16 +80,27 @@ def swic_decoder(bitstream_file: str, levels_to_decode: int, verbose: bool = Tru
         print(f"Quantisation parameter: {ips.qp}")
         print(f"Transform: {transform_type}")
 
+    # Compute the successor map
+    successor_map = compute_successor_map(ips.rows, ips.cols, ips.levels)
+
     # Entropy decoding
+    mallat_coeffs = decode_image_spiht(bitstream_payload, successor_map, ips.levels, ips.components, bits_to_process, weighty)
+
+    # Arrange coefficients into component, level and subbands
     coefficients = []
     for level in range(levels_to_decode):
-        current_level = payload_levels[level]
-        rows_sb, cols_sb = ips.rows >> (ips.levels - level), ips.cols >> (ips.levels - level)
+        r_start, c_start = ips.rows >> (ips.levels - level), ips.cols >> (ips.levels - level)
+        r_stop, c_stop = r_start * 2, c_start * 2
         coefficients_sbs = []
-        for sb_idx, sb in enumerate(current_level):
-            is_ll = not level and not sb_idx
-            coefficients_sb = decode_subband(sb, rows_sb, cols_sb, ips.components, is_ll)
-            coefficients_sbs.append(coefficients_sb)
+        if not level:
+            # LL
+            coefficients_sbs.append(mallat_coeffs[:r_start, :c_start])
+        # HL
+        coefficients_sbs.append(mallat_coeffs[:r_start, c_start:c_stop])
+        # LH
+        coefficients_sbs.append(mallat_coeffs[r_start:r_stop, :c_start])
+        # HH
+        coefficients_sbs.append(mallat_coeffs[r_start:r_stop, c_start:c_stop])
         coefficients.append(coefficients_sbs)
 
     # Inverse quantisation
@@ -137,7 +138,7 @@ def swic_decoder(bitstream_file: str, levels_to_decode: int, verbose: bool = Tru
     decoded_image = current_ll + midrange_value
     decoded_image = np.clip(decoded_image, 0, max_value)
 
-    return decoded_image
+    return decoded_image.astype(np.uint8)
 
 
 if __name__ == "__main__":
@@ -145,6 +146,8 @@ if __name__ == "__main__":
     cl_parser.add_argument("-i", "--input", type=str, required=True, help="Input bitstream compliant with SWIC compression format")
     cl_parser.add_argument("-o", "--output", type=str, required=True, help="Decoded file")
     cl_parser.add_argument("-l", "--levels", type=int, default=0, help="Number of decomposition levels to be decoded, default all which were compressed")
+    cl_parser.add_argument("-r", "--rate", type=float, default=None, help="Bits per pixel to be decoded, default all those present in the bitstream")
+    cl_parser.add_argument("-wy", "--weighty", type=float, default=0.5, help="Bits per pixel to be decoder for luma (Y) component, expressed as share of the value indicated by --rate")
     supported_output = (".yuv", ".png", ".bmp")
 
     if len(sys.argv) < 3:
@@ -161,8 +164,12 @@ if __name__ == "__main__":
     if output_ext not in supported_output:
         raise Exception(f"Decoded file extension {output_ext} not supported. Image formats allowed are: {supported_output}")
 
+    if args.rate is not None:
+        if args.rate <= 0:
+            raise Exception("Bits per pixel to be decoder cannot be negative or zero")
+
     # Print encoding parameters
-    header_str = "Video coding tutorial - Simple Wavelet-based Image Coding (SWIC) [decoder]"
+    header_str = "Video coding tutorial - Simple Wavelet-based Image Coding (SWIC) with Set Partitioning In Hierarchical Trees (SPIHT) [decoder]"
     print("-" * len(header_str))
     print(header_str)
     print(f"Input bitstream: {args.input}")
@@ -171,7 +178,7 @@ if __name__ == "__main__":
 
     # Call the encoder
     start = time.time()
-    decoded_image = swic_decoder(args.input, args.levels)
+    decoded_image = swic_decoder_spiht(args.input, args.levels, args.rate, args.weighty)
     stop = time.time()
 
     # Write out the decoded image

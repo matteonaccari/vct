@@ -1,11 +1,8 @@
 '''
-Image encoding using different discrete wavelet transforms as frequency decomposition:
- * Haar Wavelet (with and w/o dynamic range expansion)
- * LeGall 5/3 as used in the JPEG 2000 (ITU-T T.800) standard for lossless encoding
- * Cohen Dabeuchies Feauveau (CDF) 9/7 as used in the JPEG 2000 standard for lossy
-   encoding
+Wavelet-based image encoding with quality scalability using the
+Set Partitioning In Hierarchical Trees (SPIHT) method.
 
-Copyright(c) 2023 Matteo Naccari
+Copyright(c) 2025 Matteo Naccari
 All Rights Reserved.
 
 email: matteo.naccari@gmail.com | matteo.naccari@polimi.it | matteo.naccari@lx.it.pt
@@ -45,21 +42,35 @@ from typing import Tuple
 
 import cv2
 import numpy as np
+from nptyping import NDArray, Shape
+
 from ct import rgb_to_ycbcr_bt709, ycbcr_to_rgb_bt709
 from dwt import (DwtType, forward_cdf_9_7_dwt, forward_haar_dwt,
                  forward_legall_5_3_dwt, inverse_cdf_9_7_dwt, inverse_haar_dwt,
                  inverse_legall_5_3_dwt)
-from entropy import encode_subband
+from entropy_spiht import compute_successor_map, encode_image_spiht
 from hls import ImageParameterSet, write_ips
-from nptyping import NDArray, Shape
 from quantiser import quantise_plane, reconstruct_plane
+from entropy import code_block_size
+
+code_block_bytes = 2
 
 
-def swic_encoder(input_image: NDArray[Shape["*, *, *"], np.int32],
-                 bitstream_name: str, qp: int, bitdepth: int,
-                 levels: int, transform_type: DwtType,
-                 reconstruction_needed: bool) -> Tuple[int, NDArray[Shape["*, *, *"], np.int32]]:
-    # Remove mid range value from input data
+def compute_code_blocks_subbands(subbands: NDArray[Shape["*, *, *"], np.int32]) -> int:
+    total = 0
+    for sb in subbands:
+        rows, cols = sb.shape[0], sb.shape[1]
+        rows_cb, cols_cb = (rows + code_block_size - 1) // code_block_size, (cols + code_block_size - 1) // code_block_size
+        total += rows_cb * cols_cb
+
+    return total
+
+
+def swic_encoder_spiht(input_image: NDArray[Shape["*, *, *"], np.int32],
+                       bitstream_name: str, qp: int, bitdepth: int,
+                       levels: int, transform_type: DwtType,
+                       reconstruction_needed: bool) -> Tuple[int, NDArray[Shape["*, *, *"], np.int32]]:
+    # Initial setup
     midrange_value = 1 << (bitdepth - 1)
     max_value = (1 << bitdepth) - 1
     rows, cols = input_image.shape[0], input_image.shape[1]
@@ -68,9 +79,15 @@ def swic_encoder(input_image: NDArray[Shape["*, *, *"], np.int32],
     forward_dwt = {DwtType.Haar: forward_haar_dwt, DwtType.LeGall5_3: forward_legall_5_3_dwt, DwtType.CDF9_7: forward_cdf_9_7_dwt}
     inverse_dwt = {DwtType.Haar: inverse_haar_dwt, DwtType.LeGall5_3: inverse_legall_5_3_dwt, DwtType.CDF9_7: inverse_cdf_9_7_dwt}
 
+    # Check whether the number of decomposition levels needs to be decreased
+    rows_ll, cols_ll = rows >> levels, cols >> levels
+    if (rows_ll & 1) or (cols_ll & 1):
+        levels = max(0, levels - 1)
+
     # Perform forward DWT over the number of given levels
     subbands = []
     current_ll = input_image - midrange_value
+    total_code_blocks = 0
     for level in range(levels):
         ll, hl, lh, hh = forward_dwt[transform_type](current_ll)
         if level == levels - 1:
@@ -80,46 +97,64 @@ def swic_encoder(input_image: NDArray[Shape["*, *, *"], np.int32],
         else:
             current_sbs = [hl, lh, hh]
 
+        total_code_blocks += compute_code_blocks_subbands(current_sbs)
         subbands.append(current_sbs)
         current_ll = ll.copy()
 
     # Perform uniform quantisation
-    subbands_q = []
-    for level in range(levels):
-        current_levq = []
+    subbands_q = [None] * levels
+    image_levels = np.zeros(input_image.shape, np.int32)
+    sb_offset = [[0, 0], [0, 1], [1, 0], [1, 1]]
+    for level in range(levels - 1, -1, -1):
+        rows_lev, cols_lev = rows >> (level + 1), cols >> (level + 1)
+        lev_shape = (rows_lev * 2, cols_lev * 2, 3) if components == 3 else (rows_lev * 2, cols_lev * 2)
+        current_levq = np.zeros(lev_shape, np.int32)
         shift = [level, level, 2 * level] if level != levels - 1 else [level, level, level, 2 * level]
+        offset_idx = 0 if level == levels - 1 else 1
+        current_levq_sb = []
         for sb_idx, sb in enumerate(subbands[level]):
-            sbq = np.zeros(sb.shape, np.int32)
+            row_start, col_start = sb.shape[0] * sb_offset[sb_idx + offset_idx][0], sb.shape[1] * sb_offset[sb_idx + offset_idx][1]
+            row_stop, col_stop = row_start + rows_lev, col_start + cols_lev
             if components > 1:
                 for comp in range(components):
-                    sbq[:, :, comp] = quantise_plane(sb[:, :, comp] << shift[sb_idx], qp)
+                    current_levq[row_start:row_stop, col_start:col_stop, comp] = quantise_plane(sb[:, :, comp] << shift[sb_idx], qp)
             else:
-                sbq = quantise_plane(sb << shift[sb_idx], qp)
-            current_levq.append(sbq)
-        subbands_q.append(current_levq)
+                current_levq[row_start:row_stop, col_start:col_stop] = quantise_plane(sb << shift[sb_idx], qp)
+            current_levq_sb.append(current_levq[row_start:row_stop, col_start:col_stop])
+        if components > 1:
+            image_levels[0:lev_shape[0], 0:lev_shape[1], :] += current_levq
+        else:
+            image_levels[0:lev_shape[0], 0:lev_shape[1]] += current_levq
+        subbands_q[level] = current_levq_sb
 
-    # Entropy coding
-    payload_levels = []
-    for level in range(levels - 1, -1, -1):
-        current_lev_sbs = subbands_q[level]
-        payload_level = []
-        for idx, sb in enumerate(current_lev_sbs):
-            is_ll = level == levels - 1 and not idx
-            payload_cbs = encode_subband(sb, is_ll)
-            payload_level.append(payload_cbs)
-        payload_levels.append(payload_level)
+    # Entropy encoding according to the SPIHT algorithm
+    successor_map = compute_successor_map(image_levels.shape[0], image_levels.shape[1], levels)
+    payload_size, payload_buffer = encode_image_spiht(image_levels, successor_map, levels, components)
 
-    # Write out the bitstream
+    # Compute the number of stuffing bytes needed for a fair comparison with the non quality scalable implementation
+    # Each code block in the original swic implementation requires two bytes to signal its size
+    # The total of bytes is thus given by the total of code blocks which swic would have encoded times two
+    # Four is subtracted from the total since this is the number of bytes used to signal how many bytes the decoder needs
+    # to ignore
+    stuffing_bytes = total_code_blocks * code_block_bytes - 4
+    stuffing_array = np.zeros(stuffing_bytes, np.uint8)
+
+    # Bitstream writing
     with open(bitstream_name, "wb") as fh:
         ips = ImageParameterSet(rows=rows, cols=cols, components=components, bitdepth=bitdepth, levels=levels, transform=transform, qp=qp)
         write_ips(fh, ips)
 
-        # Decomposition levels, subbands and levels
-        for current_level in payload_levels:
-            for sb in current_level:
-                for cb_payload in sb:
-                    fh.write(cb_payload.tobytes())
+        # Bitstream stuffing
+        fh.write(int(stuffing_bytes).to_bytes(4, byteorder="little"))
+        fh.write(stuffing_array.tobytes())
 
+        start = 0
+        for c in range(components):
+            current_size = payload_size[c]
+            stop = start + current_size
+            fh.write(int(current_size).to_bytes(4, byteorder="little"))
+            fh.write(payload_buffer[start:stop].tobytes())
+            start = stop
         total_bytes = fh.tell()
 
     # Reconstruction path: inverse quantisation (aka reconstruction), inverse DWT and compute PSNR
@@ -226,7 +261,7 @@ if __name__ == "__main__":
             input_image = rgb_to_ycbcr_bt709(red, green, blue, args.bitdepth)
 
     # Print encoding parameters
-    header_str = "Video coding tutorial - Simple Wavelet-based Image Coding (SWIC) [encoder]"
+    header_str = "Video coding tutorial - Simple Wavelet-based Image Coding (SWIC) with Set Partitioning In Hierarchical Trees (SPIHT) [encoder]"
     print("-" * len(header_str))
     print(header_str)
     print(f"Input image: {args.input} - {cols}x{rows}")
@@ -241,7 +276,7 @@ if __name__ == "__main__":
 
     # Call the encoder
     start = time.time()
-    total_bytes, reconstructed_image = swic_encoder(input_image, args.output, args.quantisation, args.bitdepth, args.levels, args.transform, args.reconstructed != "")
+    total_bytes, reconstructed_image = swic_encoder_spiht(input_image, args.output, args.quantisation, args.bitdepth, args.levels, args.transform, args.reconstructed != "")
     stop = time.time()
 
     # Dump reconstructed file if needed

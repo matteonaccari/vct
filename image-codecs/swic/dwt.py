@@ -74,7 +74,7 @@ class Direction(IntEnum):
     @staticmethod
     def from_string(s):
         try:
-            return DwtType[s]
+            return Direction[s]
         except KeyError:
             raise ValueError()
 

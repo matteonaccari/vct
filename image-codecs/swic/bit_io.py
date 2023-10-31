@@ -34,6 +34,7 @@ THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
 from ctypes import c_uint32
+from typing import List
 
 import numpy as np
 from nptyping import NDArray, Shape
@@ -70,18 +71,51 @@ class BitWriter:
         if self.current_ptr >= self.capacity:
             return
         bytes_2_write = (self.bits_accumulated + 7) >> 3
-        for current_bytes in int(self.accumulator).to_bytes(bytes_2_write, byteorder="little"):
-            self.buffer[self.current_ptr] = np.uint8(current_bytes)
+        for current_byte in int(self.accumulator).to_bytes(bytes_2_write, byteorder="little"):
+            self.buffer[self.current_ptr] = np.uint8(current_byte)
             self.current_ptr += 1
             self.bit_counter += 8
             if self.current_ptr >= self.capacity:
                 raise Exception("Memory buffer capacity exceeded")
+        self.accumulator = 0
+        self.bits_accumulated = 0
 
     def bits_written(self) -> int:
         return self.bit_counter
 
     def bytes_written(self) -> int:
         return self.current_ptr
+
+
+class BitWriterAppend:
+    def __init__(self) -> None:
+        self.buffer: List[int] = []
+        self.accumulator: int = 0
+        self.bit_counter: int = 0
+        self.bits_accumulated: int = 0
+
+    def write_bits(self, value: int, bits: int) -> None:
+        if not (0 < bits and bits <= 32):
+            raise Exception(f"Wrong value of bits ({bits}) provided")
+
+        self.accumulator |= c_uint32(value << self.bits_accumulated).value
+
+        if self.bits_accumulated + bits >= 32:
+            for current_byte in int(self.accumulator).to_bytes(4, byteorder="little"):
+                self.buffer.append(np.uint8(current_byte))
+            self.accumulator = c_uint32(value >> (32 - self.bits_accumulated)).value
+            self.bits_accumulated += bits - 32
+        else:
+            self.bits_accumulated += bits
+        self.bit_counter += bits
+
+    def flush(self) -> None:
+        bytes_2_write = (self.bits_accumulated + 7) >> 3
+        for current_byte in int(self.accumulator).to_bytes(bytes_2_write, byteorder="little"):
+            self.buffer.append(np.uint8(current_byte))
+            self.bit_counter += 8
+        self.accumulator = 0
+        self.bits_accumulated = 0
 
 
 class BitReader:
@@ -115,3 +149,63 @@ class BitReader:
             self.bits_held = 8
 
         return value
+
+
+class EndOfParsing(Exception):
+    pass
+
+
+class BitReaderLimited:
+    def __init__(self, buffer: NDArray[Shape["*"], np.uint8]) -> None:
+        self.buffer: NDArray[Shape["*"], np.uint8] = buffer
+        self.current_ptr: int = 0
+        self.capacity: int = buffer.size
+        self.accumulator: int = 0
+        self.bits_held: int = 0
+        self.bit_counter: int = 0
+        self.bits_to_process: int = 0
+
+    def set_bit_limit(self, limit: int) -> None:
+        self.bits_to_process = limit
+        self.bit_counter = 0
+
+    def read(self, bits: int) -> int:
+        if not (0 < bits and bits <= 32):
+            raise Exception(f"Wrong number of bits ({bits}) to be read")
+
+        if self.bit_counter + bits > self.capacity << 3:
+            raise Exception("Trying to read out of the buffer memory")
+
+        if self.bit_counter > self.bits_to_process:
+            raise EndOfParsing
+
+        self.bit_counter += bits
+        value, bits_remaining = 0, bits
+        while True:
+            if self.bits_held >= bits_remaining:
+                value |= (self.accumulator & ((1 << bits_remaining) - 1)) << (bits - bits_remaining)
+                self.accumulator >>= bits_remaining
+                self.bits_held -= bits_remaining
+                break
+            value |= self.accumulator << (bits - bits_remaining)
+            bits_remaining -= self.bits_held
+            self.accumulator = self.buffer[self.current_ptr]
+            self.current_ptr += 1
+            self.bits_held = 8
+
+        return value
+
+    def ff_to_marker(self, marker: int) -> None:
+        while True:
+            current_byte = self.buffer[self.current_ptr]
+            if current_byte == 0xFF:
+                self.current_ptr += 1
+                if self.buffer[self.current_ptr] == marker:
+                    self.current_ptr += 1
+                    self.accumulator = self.buffer[self.current_ptr]
+                    self.bits_held = 8
+                    break
+            else:
+                self.current_ptr += 1
+            if self.current_ptr >= self.capacity:
+                raise Exception("Trying to read out of the buffer memory")

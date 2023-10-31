@@ -7,4 +7,4 @@ This tutorial will introduce you to an important entropy coding scheme: *arithme
 There are plenty of good references which I took inspiration from when writing this tutorial, here is a (limited) list of them:
  * Mark Nelson, "Data compression with arithmetic coding", available at this [link](https://marknelson.us/posts/2014/10/19/data-compression-with-arithmetic-coding.html).
  * Detlev Marpe, "Context-based adaptive binary arithmetic coding (CABAC)", available at this [link](http://iphome.hhi.de/marpe/cabac.html).
- * David S. Taubman and Michael W. Marcellin, "JPEG200 image compression fundamental, standards and practice", Kluwer Academic Publishers, 798 pages, 2002.
+ * David S. Taubman and Michael W. Marcellin, "JPEG2000 image compression fundamental, standards and practice", Kluwer Academic Publishers, 798 pages, 2002.
