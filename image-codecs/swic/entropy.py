@@ -33,12 +33,11 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-from typing import Any, List
+from typing import List
 
 import numpy as np
-from nptyping import NDArray
-
 from bit_io import BitReader, BitWriter
+from nptyping import NDArray, Shape
 
 code_block_size, code_block_buffer_size = 32, 8192
 
@@ -66,7 +65,7 @@ def egc0_decoding(br: BitReader) -> int:
     return value
 
 
-def encode_pure_egc(coefficients: NDArray[(Any), np.int32], bw: BitWriter) -> None:
+def encode_pure_egc(coefficients: NDArray[Shape["*"], np.int32], bw: BitWriter) -> None:
     # Take absolute value and sign of coefficients
     coefficients_abs = np.abs(coefficients)
     coefficients_s = np.sign(coefficients)
@@ -86,7 +85,7 @@ def encode_pure_egc(coefficients: NDArray[(Any), np.int32], bw: BitWriter) -> No
             bw.write_bits(sign_bit, 1)
 
 
-def encode_rle_egc(coefficients: NDArray[(Any), np.int32], bw: BitWriter) -> None:
+def encode_rle_egc(coefficients: NDArray[Shape["*"], np.int32], bw: BitWriter) -> None:
     # Take absolute value and sign of coefficients
     coefficients_abs = np.abs(coefficients)
     coefficients_s = np.sign(coefficients)
@@ -115,7 +114,7 @@ def encode_rle_egc(coefficients: NDArray[(Any), np.int32], bw: BitWriter) -> Non
         idx += 1
 
 
-def decode_pure_egc(br: BitReader, rows: int, cols: int) -> NDArray[(Any, Any), np.int32]:
+def decode_pure_egc(br: BitReader, rows: int, cols: int) -> NDArray[Shape["*, *"], np.int32]:
     coefficients = np.zeros((rows * cols), np.int32)
     total_coefficients = egc0_decoding(br)
 
@@ -130,7 +129,7 @@ def decode_pure_egc(br: BitReader, rows: int, cols: int) -> NDArray[(Any, Any), 
     return np.reshape(coefficients, (rows, cols))
 
 
-def decode_rle_egc(br: BitReader, rows: int, cols: int) -> NDArray[(Any, Any), np.int32]:
+def decode_rle_egc(br: BitReader, rows: int, cols: int) -> NDArray[Shape["*, *"], np.int32]:
     coefficients = np.zeros((rows * cols), np.int32)
     total_coefficients = egc0_decoding(br)
 
@@ -147,7 +146,7 @@ def decode_rle_egc(br: BitReader, rows: int, cols: int) -> NDArray[(Any, Any), n
     return np.reshape(coefficients, (rows, cols))
 
 
-def encode_subband(subband: NDArray[(Any, Any, 3), np.int32], is_ll: bool) -> List[NDArray[(Any), np.uint8]]:
+def encode_subband(subband: NDArray[Shape["*, *, 3"], np.int32], is_ll: bool) -> List[NDArray[Shape["*"], np.uint8]]:
     # Determine the number of code blocks for this subband
     rows, cols = subband.shape[0], subband.shape[1]
     components = 3 if len(subband.shape) == 3 else 1
@@ -184,7 +183,7 @@ def encode_subband(subband: NDArray[(Any, Any, 3), np.int32], is_ll: bool) -> Li
     return code_block_payload
 
 
-def decode_subband(payload_cbs: List[NDArray[(Any), np.uint8]], rows_sb: int, cols_sb: int, components: int, is_ll: bool) -> NDArray[(Any, Any, 3), np.int32]:
+def decode_subband(payload_cbs: List[NDArray[Shape["*"], np.uint8]], rows_sb: int, cols_sb: int, components: int, is_ll: bool) -> NDArray[Shape["*, *, 3"], np.int32]:
     if components == 1:
         subband = np.zeros((rows_sb, cols_sb), np.int32)
     else:

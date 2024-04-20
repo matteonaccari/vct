@@ -34,10 +34,10 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
-from nptyping import NDArray
+from nptyping import NDArray, Shape
 
 # Luma Huffman tables
 luma_dc_bits = np.array([0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0], np.int32)
@@ -64,7 +64,7 @@ chroma_ac_values = np.array([0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x3
                              0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA], np.int32)
 
 
-def expand_huffman_table(bits: NDArray[(Any), np.int32], values: NDArray[(Any), np.int32]) -> NDArray[(256, 2), np.int32]:
+def expand_huffman_table(bits: NDArray[Shape["*"], np.int32], values: NDArray[Shape["*"], np.int32]) -> NDArray[Shape["256, 2"], np.int32]:
     if len(values) != np.sum(bits):
         raise Exception("Huffman table provided in the wrong format")
 
@@ -82,7 +82,7 @@ def expand_huffman_table(bits: NDArray[(Any), np.int32], values: NDArray[(Any), 
     return htable
 
 
-def get_zigzag_scan(block_size: int) -> Tuple[NDArray[(Any, Any), np.uint8], NDArray[(Any, Any), np.uint8]]:
+def get_zigzag_scan(block_size: int) -> Tuple[NDArray[Shape["*, *"], np.uint8], NDArray[Shape["*, *"], np.uint8]]:
     scan_idx = np.zeros((block_size, block_size), np.uint8)
     scan_idx_inv = np.zeros((block_size, block_size), np.uint8)
 
@@ -139,7 +139,7 @@ def get_zigzag_scan(block_size: int) -> Tuple[NDArray[(Any, Any), np.uint8], NDA
     return scan_idx, scan_idx_inv
 
 
-def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(256, 2), np.int32], ach: NDArray[(256, 2), np.int32]) -> Tuple[Dict, int]:
+def encode_block(block: NDArray[Shape["*, *"], np.int32], pred_dc, dch: NDArray[Shape["256, 2"], np.int32], ach: NDArray[Shape["256, 2"], np.int32]) -> Tuple[Dict, int]:
     res_dc = block[0] - pred_dc
     cw_dict = {}
     cw_list = []
@@ -199,7 +199,7 @@ def encode_block(block: NDArray[(Any, Any), np.int32], pred_dc, dch: NDArray[(25
     return cw_dict, rate
 
 
-def get_block_symbols(block: NDArray[(Any, Any), np.int32], pred_dc) -> Tuple[int, List[int]]:
+def get_block_symbols(block: NDArray[Shape["*, *"], np.int32], pred_dc) -> Tuple[int, List[int]]:
     res_dc = block[0] - pred_dc
 
     # Determine the category for the DC coefficient
@@ -238,12 +238,12 @@ def get_block_symbols(block: NDArray[(Any, Any), np.int32], pred_dc) -> Tuple[in
     return dc_sym, ac_sym
 
 
-def limit_codewords_length(bits_array: NDArray[(32), np.int32]) -> NDArray[(32), np.int32]:
+def limit_codewords_length(bits_array: NDArray[Shape["32"], np.int32]) -> NDArray[Shape["32"], np.int32]:
     i = 32
     while i > 16:
-        while(bits_array[i] > 0):
+        while bits_array[i] > 0:
             j = i - 2
-            while (bits_array[j] == 0):
+            while bits_array[j] == 0:
                 j -= 1
             bits_array[i] -= 2
             bits_array[i - 1] += 1
@@ -257,7 +257,7 @@ def limit_codewords_length(bits_array: NDArray[(32), np.int32]) -> NDArray[(32),
     return bits_array
 
 
-def derive_huffman_table(freq: NDArray[(257), np.int32]) -> Tuple[NDArray[(33), np.int32], NDArray[(257), np.int32]]:
+def derive_huffman_table(freq: NDArray[Shape["257"], np.int32]) -> Tuple[NDArray[Shape["33"], np.int32], NDArray[Shape["257"], np.int32]]:
     code_size = np.zeros((257), np.int32)
     others = -1 * np.ones((257), np.int32)
 
@@ -306,7 +306,7 @@ def derive_huffman_table(freq: NDArray[(257), np.int32]) -> Tuple[NDArray[(33), 
     return bits, code_size
 
 
-def sort_input(code_size: NDArray[(257), np.int32]) -> NDArray[(Any), np.int32]:
+def sort_input(code_size: NDArray[Shape["257"], np.int32]) -> NDArray[Shape["*"], np.int32]:
     values = []
     for i in range(1, 33):
         for idx in range(256):
@@ -316,7 +316,7 @@ def sort_input(code_size: NDArray[(257), np.int32]) -> NDArray[(Any), np.int32]:
     return np.array(values, np.int32)
 
 
-def design_huffman_table(symbols: List[int]) -> Tuple[NDArray[(32), np.int32], NDArray[(Any), np.int32]]:
+def design_huffman_table(symbols: List[int]) -> Tuple[NDArray[Shape["32"], np.int32], NDArray[Shape["*"], np.int32]]:
     # Declaration of arrays freq, others and code_size
     frequency_table = np.zeros((257), np.int32)
     frequency_table[-1] = 1

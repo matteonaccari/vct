@@ -37,7 +37,7 @@ THE POSSIBILITY OF SUCH DAMAGE.
 from typing import Tuple
 
 import numpy as np
-from nptyping import NDArray
+from nptyping import NDArray, Shape
 
 # Quantisation tables for luma and chroma components, see Section K.1 of the spec.
 luma_quantisation_matrix = np.array([[16, 11, 10, 16, 24, 40, 51, 61],
@@ -59,7 +59,7 @@ chroma_quantisation_matrix = np.array([[17, 18, 24, 47, 99, 99, 99, 99],
                                        [99, 99, 99, 99, 99, 99, 99, 99]], np.int32)
 
 
-def compute_quantisation_matrices(quality: int) -> Tuple[NDArray[(8, 8), np.int32], NDArray[(8, 8), np.int32]]:
+def compute_quantisation_matrices(quality: int) -> Tuple[NDArray[Shape["8, 8"], np.int32], NDArray[Shape["8, 8"], np.int32]]:
     # Adjust the quality value according to the relationship worked out by the Indipendent JPEG Group (IJG)
     quality = 5000 // quality if quality < 50 else 200 - quality * 2
 
@@ -69,8 +69,8 @@ def compute_quantisation_matrices(quality: int) -> Tuple[NDArray[(8, 8), np.int3
     return q_luma, q_chroma
 
 
-def rd_rl_pair(start: int, coefficients_zz: NDArray[(64), np.float64], levels_zz: NDArray[(64), np.int32],
-               qm_zz: NDArray[(8, 8), np.float64], ht: NDArray[(256, 2), np.int32]) -> Tuple[int, float, float, int]:
+def rd_rl_pair(start: int, coefficients_zz: NDArray[Shape["64"], np.float64], levels_zz: NDArray[Shape["64"], np.int32],
+               qm_zz: NDArray[Shape["8, 8"], np.float64], ht: NDArray[Shape["256, 2"], np.int32]) -> Tuple[int, float, float, int]:
     i, run_length = start, 0
     distortion = 0
     while levels_zz[i] == 0:
@@ -87,10 +87,10 @@ def rd_rl_pair(start: int, coefficients_zz: NDArray[(64), np.float64], levels_zz
     return rate, distortion, distortion_value, run_length
 
 
-def rdoq_8x8_plane(coefficients: NDArray[(8, 8), np.float64], qm: NDArray[(8, 8), np.float64],
-                   table_dc: NDArray[(256, 2), np.int32], table_ac: NDArray[(256, 2), np.int32],
-                   _lambda: float, zz_idx: NDArray[(8, 8), np.uint8], r_zz_idx: NDArray[(8, 8), np.uint8],
-                   pred_dc: int) -> Tuple[NDArray[(8, 8), np.int32], float, int]:
+def rdoq_8x8_plane(coefficients: NDArray[Shape["8, 8"], np.float64], qm: NDArray[Shape["8, 8"], np.float64],
+                   table_dc: NDArray[Shape["256, 2"], np.int32], table_ac: NDArray[Shape["256, 2"], np.int32],
+                   _lambda: float, zz_idx: NDArray[Shape["8, 8"], np.uint8], r_zz_idx: NDArray[Shape["8, 8"], np.uint8],
+                   pred_dc: int) -> Tuple[NDArray[Shape["8, 8"], np.int32], float, int]:
     # Regular quantisation
     s = np.sign(coefficients).astype(np.int32)
     levels = np.divide(coefficients + 0.5, qm).astype(np.int32)

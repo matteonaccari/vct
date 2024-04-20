@@ -42,10 +42,10 @@ THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
 from enum import IntEnum
-from typing import Any, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
-from nptyping import NDArray
+from nptyping import NDArray, Shape
 
 
 class DwtType(IntEnum):
@@ -84,11 +84,11 @@ Haar Wavelet
 '''
 
 
-def forward_haar_dwt(image: NDArray[(Any, Any, Any), np.int32],
-                     range_expansion: bool = False) -> Tuple[NDArray[(Any, Any, Any), np.int32],
-                                                             NDArray[(Any, Any, Any), np.int32],
-                                                             NDArray[(Any, Any, Any), np.int32],
-                                                             NDArray[(Any, Any, Any), np.int32]]:
+def forward_haar_dwt(image: NDArray[Shape["*, *, *"], np.int32],
+                     range_expansion: bool = False) -> Tuple[NDArray[Shape["*, *, *"], np.int32],
+                                                             NDArray[Shape["*, *, *"], np.int32],
+                                                             NDArray[Shape["*, *, *"], np.int32],
+                                                             NDArray[Shape["*, *, *"], np.int32]]:
 
     rows, cols = image.shape[0], image.shape[1]
     rows_pad, cols_pad = ((rows + 1) >> 1) << 1, ((cols + 1) >> 1) << 1
@@ -128,10 +128,10 @@ def forward_haar_dwt(image: NDArray[(Any, Any, Any), np.int32],
     return ll, hl, lh, hh
 
 
-def inverse_haar_dwt(ll: NDArray[(Any, Any, Any), np.int32],
-                     hl: NDArray[(Any, Any, Any), np.int32],
-                     lh: NDArray[(Any, Any, Any), np.int32],
-                     hh: NDArray[(Any, Any, Any), np.int32], range_expansion: bool = False) -> NDArray[(Any, Any, Any), np.int32]:
+def inverse_haar_dwt(ll: NDArray[Shape["*, *, *"], np.int32],
+                     hl: NDArray[Shape["*, *, *"], np.int32],
+                     lh: NDArray[Shape["*, *, *"], np.int32],
+                     hh: NDArray[Shape["*, *, *"], np.int32], range_expansion: bool = False) -> NDArray[Shape["*, *, *"], np.int32]:
     rows, cols = ll.shape[0], ll.shape[1]
     if len(ll.shape) == 3:
         samples = np.zeros((2 * rows, 2 * cols, 3), np.int32)
@@ -168,8 +168,8 @@ LeGall 5/3 Wavelet
 '''
 
 
-def extend(samples_2D: NDArray[(Any, Any, Any), np.int32], table_left: List[int] = [2, 1],
-           table_right: List[int] = [1, 2], d: Direction = Direction.Vertical) -> Tuple[NDArray[(Any, Any, Any), np.int32], int]:
+def extend(samples_2D: NDArray[Shape["*, *, *"], np.int32], table_left: List[int] = [2, 1],
+           table_right: List[int] = [1, 2], d: Direction = Direction.Vertical) -> Tuple[NDArray[Shape["*, *, *"], np.int32], int]:
     i0, i1 = 0, samples_2D.shape[0] if d == Direction.Vertical else samples_2D.shape[1]
     components = 1 if len(samples_2D.shape) == 2 else 3
     i_left, i_right = table_left[i0 & 1], table_right[i1 & 1]
@@ -182,7 +182,7 @@ def extend(samples_2D: NDArray[(Any, Any, Any), np.int32], table_left: List[int]
     return samples_2D_ext, i_left
 
 
-def forward_filter_5_3(samples_ext: NDArray[(Any, Any, Any), np.int32], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[(Any, Any, Any), np.int32]:
+def forward_filter_5_3(samples_ext: NDArray[Shape["*, *, *"], np.int32], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[Shape["*, *, *"], np.int32]:
     samples_filtered = np.zeros_like(samples_ext)
     n_start, n_stop = (i0 + 1) // 2 - 1, (i1 + 1) // 2
     n = np.array([i for i in range(n_start, n_stop)], np.int32)
@@ -201,7 +201,7 @@ def forward_filter_5_3(samples_ext: NDArray[(Any, Any, Any), np.int32], i0: int,
         return samples_filtered[:, i0 + i_left:i1 + i_left]
 
 
-def inverse_filter_5_3(samples_ext: NDArray[(Any, Any, Any), np.int32], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[(Any, Any, Any), np.int32]:
+def inverse_filter_5_3(samples_ext: NDArray[Shape["*, *, *"], np.int32], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[Shape["*, *, *"], np.int32]:
     samples_filtered = np.zeros_like(samples_ext)
     n_start, n_stop = i0 // 2, i1 // 2 + 1
     n = np.array([i for i in range(n_start, n_stop)], np.int32)
@@ -220,10 +220,10 @@ def inverse_filter_5_3(samples_ext: NDArray[(Any, Any, Any), np.int32], i0: int,
         return samples_filtered[:, i0 + i_left:i1 + i_left]
 
 
-def forward_legall_5_3_dwt(image: NDArray[(Any, Any, Any), np.int32]) -> Tuple[NDArray[(Any, Any, Any), np.int32],
-                                                                               NDArray[(Any, Any, Any), np.int32],
-                                                                               NDArray[(Any, Any, Any), np.int32],
-                                                                               NDArray[(Any, Any, Any), np.int32]]:
+def forward_legall_5_3_dwt(image: NDArray[Shape["*, *, *"], np.int32]) -> Tuple[NDArray[Shape["*, *, *"], np.int32],
+                                                                                NDArray[Shape["*, *, *"], np.int32],
+                                                                                NDArray[Shape["*, *, *"], np.int32],
+                                                                                NDArray[Shape["*, *, *"], np.int32]]:
     rows, cols = image.shape[0], image.shape[1]
 
     # Transform on columns
@@ -247,10 +247,10 @@ def forward_legall_5_3_dwt(image: NDArray[(Any, Any, Any), np.int32]) -> Tuple[N
     return ll, hl, lh, hh
 
 
-def inverse_legall_5_3_dwt(ll: NDArray[(Any, Any, Any), np.int32],
-                           hl: NDArray[(Any, Any, Any), np.int32],
-                           lh: NDArray[(Any, Any, Any), np.int32],
-                           hh: NDArray[(Any, Any, Any), np.int32]) -> NDArray[(Any, Any, Any), np.int32]:
+def inverse_legall_5_3_dwt(ll: NDArray[Shape["*, *, *"], np.int32],
+                           hl: NDArray[Shape["*, *, *"], np.int32],
+                           lh: NDArray[Shape["*, *, *"], np.int32],
+                           hh: NDArray[Shape["*, *, *"], np.int32]) -> NDArray[Shape["*, *, *"], np.int32]:
     rows, cols = ll.shape[0] << 1, ll.shape[1] << 1
     if len(ll.shape) == 3:
         samples = np.zeros((rows, cols, 3), np.int32)
@@ -283,7 +283,7 @@ Cohen Dabeuchies Feauveau (CDF) 9/7 Wavelet
 alpha, beta, gamma, delta, K = -1.586134342059924, -0.052980118572961, 0.882911075530934, 0.443506852043971, 1.230174104914001
 
 
-def forward_filter_9_7(samples_ext: NDArray[(Any, Any, Any), np.float64], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[(Any, Any, Any), np.float64]:
+def forward_filter_9_7(samples_ext: NDArray[Shape["*, *, *"], np.float64], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[Shape["*, *, *"], np.float64]:
     samples_filtered = np.zeros(samples_ext.shape)
 
     # Step 1
@@ -337,7 +337,7 @@ def forward_filter_9_7(samples_ext: NDArray[(Any, Any, Any), np.float64], i0: in
         return samples_filtered[:, i_left + i0:i1 + i_left]
 
 
-def inverse_filter_9_7(samples_ext: NDArray[(Any, Any, Any), np.float64], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[(Any, Any, Any), np.float64]:
+def inverse_filter_9_7(samples_ext: NDArray[Shape["*, *, *"], np.float64], i0: int, i1: int, i_left: int, d: Direction = Direction.Vertical) -> NDArray[Shape["*, *, *"], np.float64]:
     samples_filtered = np.zeros(samples_ext.shape)
 
     # Step 1
@@ -391,10 +391,10 @@ def inverse_filter_9_7(samples_ext: NDArray[(Any, Any, Any), np.float64], i0: in
         return samples_filtered[:, i_left + i0:i1 + i_left]
 
 
-def forward_cdf_9_7_dwt(image: NDArray[(Any, Any, Any), np.int32]) -> Tuple[NDArray[(Any, Any, Any), np.float64],
-                                                                            NDArray[(Any, Any, Any), np.int32],
-                                                                            NDArray[(Any, Any, Any), np.int32],
-                                                                            NDArray[(Any, Any, Any), np.int32]]:
+def forward_cdf_9_7_dwt(image: NDArray[Shape["*, *, *"], np.int32]) -> Tuple[NDArray[Shape["*, *, *"], np.float64],
+                                                                             NDArray[Shape["*, *, *"], np.int32],
+                                                                             NDArray[Shape["*, *, *"], np.int32],
+                                                                             NDArray[Shape["*, *, *"], np.int32]]:
     rows, cols = image.shape[0], image.shape[1]
 
     # Transform on columns
@@ -418,10 +418,10 @@ def forward_cdf_9_7_dwt(image: NDArray[(Any, Any, Any), np.int32]) -> Tuple[NDAr
     return ll, hl, lh, hh
 
 
-def inverse_cdf_9_7_dwt(ll: NDArray[(Any, Any, Any), np.float64],
-                        hl: NDArray[(Any, Any, Any), np.float64],
-                        lh: NDArray[(Any, Any, Any), np.float64],
-                        hh: NDArray[(Any, Any, Any), np.float64]) -> NDArray[(Any, Any, Any), np.float64]:
+def inverse_cdf_9_7_dwt(ll: NDArray[Shape["*, *, *"], np.float64],
+                        hl: NDArray[Shape["*, *, *"], np.float64],
+                        lh: NDArray[Shape["*, *, *"], np.float64],
+                        hh: NDArray[Shape["*, *, *"], np.float64]) -> NDArray[Shape["*, *, *"], np.float64]:
     rows, cols = ll.shape[0] << 1, ll.shape[1] << 1
     if len(ll.shape) == 3:
         samples = np.zeros((rows, cols, 3), np.float64)

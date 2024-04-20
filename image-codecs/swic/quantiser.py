@@ -41,16 +41,15 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-from typing import Any
 
 import numpy as np
-from nptyping import NDArray
+from nptyping import NDArray, Shape
 
 quantiser_scale = np.array([26214, 23302, 20560, 18396, 16384, 14564], np.int32)
 reconstruction_scale = np.array([40, 45, 51, 57, 64, 72], np.int32)
 
 
-def quantise_plane(subband_plane: NDArray[(Any, Any), np.int32], qp: int) -> NDArray[(Any, Any), np.int32]:
+def quantise_plane(subband_plane: NDArray[Shape["*, *"], np.int32], qp: int) -> NDArray[Shape["*, *"], np.int32]:
     # Definitions
     quantiser_shift = 14
     qp_rem, qp_per = qp % 6, qp // 6
@@ -65,7 +64,7 @@ def quantise_plane(subband_plane: NDArray[(Any, Any), np.int32], qp: int) -> NDA
     return levels_plane
 
 
-def reconstruct_plane(levels_plane: NDArray[(Any, Any), np.int32], qp: int) -> NDArray[(Any, Any), np.int32]:
+def reconstruct_plane(levels_plane: NDArray[Shape["*, *"], np.int32], qp: int) -> NDArray[Shape["*, *"], np.int32]:
     # Definitions
     quantiser_shift = 6
     qp_rem, qp_per = qp % 6, qp // 6

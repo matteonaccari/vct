@@ -39,7 +39,7 @@ import sys
 import time
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Tuple
 
 import cv2
 import numpy as np
@@ -48,14 +48,14 @@ from ct import rgb_to_ycbcr_bt709
 from dct import compute_dct, compute_dct_matrix
 from entropy import (design_huffman_table, encode_block, expand_huffman_table,
                      get_block_symbols, get_zigzag_scan)
-from nptyping import NDArray
+from nptyping import NDArray, Shape
 from quantiser import compute_quantisation_matrices
 from syntax import (write_comment, write_huffman_table, write_jfif_header,
                     write_quantisation_tables, write_segment_marker,
                     write_start_of_frame, write_start_of_scan)
 
 
-def jpeg_encoding_ht_opt(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_name: str, quality: int) -> Tuple[int, int]:
+def jpeg_encoding_ht_opt(input_image: NDArray[Shape["*, *, 3"], np.uint8], bitstream_name: str, quality: int) -> Tuple[int, int]:
     qy, qc = compute_quantisation_matrices(quality)
     qm = np.dstack((qy, qc, qc)).astype(np.float64)
     _, zigzag_scan = get_zigzag_scan(8)

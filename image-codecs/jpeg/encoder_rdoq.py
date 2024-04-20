@@ -39,7 +39,7 @@ import sys
 import time
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Tuple
 
 import cv2
 import numpy as np
@@ -50,14 +50,14 @@ from entropy import (chroma_ac_bits, chroma_ac_values, chroma_dc_bits,
                      chroma_dc_values, encode_block, expand_huffman_table,
                      get_zigzag_scan, luma_ac_bits, luma_ac_values,
                      luma_dc_bits, luma_dc_values)
-from nptyping import NDArray
+from nptyping import NDArray, Shape
 from quantiser import compute_quantisation_matrices, rdoq_8x8_plane
 from syntax import (write_comment, write_huffman_table, write_jfif_header,
                     write_quantisation_tables, write_segment_marker,
                     write_start_of_frame, write_start_of_scan)
 
 
-def jpeg_encoding_rdoq(input_image: NDArray[(Any, Any, 3), np.uint8], bitstream_name: str, quality: int) -> Tuple[int, int, int, float, float]:
+def jpeg_encoding_rdoq(input_image: NDArray[Shape["*, *, 3"], np.uint8], bitstream_name: str, quality: int) -> Tuple[int, int, int, float, float]:
     qy, qc = compute_quantisation_matrices(quality)
     r_zigzag_scan, zigzag_scan = get_zigzag_scan(8)
 

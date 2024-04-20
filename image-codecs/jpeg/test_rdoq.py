@@ -3,7 +3,6 @@ from hashlib import md5
 
 import cv2
 import numpy as np
-
 from ct import rgb_to_ycbcr_bt709
 from encoder_rdoq import jpeg_encoding_rdoq
 from entropy import (encode_block, expand_huffman_table, get_zigzag_scan,

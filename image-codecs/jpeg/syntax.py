@@ -35,11 +35,10 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-from typing import Any
 
 import numpy as np
 from bit_io import BitWriter
-from nptyping import NDArray
+from nptyping import NDArray, Shape
 
 
 def write_jfif_header(bw: BitWriter) -> None:
@@ -60,7 +59,7 @@ def write_comment(bw: BitWriter, comment: str) -> None:
     bw.write_bytes(comment_numbers)
 
 
-def write_quantisation_tables(bw: BitWriter, qy: NDArray[(64), np.int32], qc: NDArray[(64), np.int32]) -> None:
+def write_quantisation_tables(bw: BitWriter, qy: NDArray[Shape["64"], np.int32], qc: NDArray[Shape["64"], np.int32]) -> None:
     y_data = [0] + qy.tolist()
     c_data = [1] + qc.tolist()
 
@@ -76,10 +75,10 @@ def write_start_of_frame(bw: BitWriter, frame_height: int, frame_width: int, com
 
 
 def write_huffman_table(bw: BitWriter,
-                        dc_y_bits: NDArray[(Any), np.int32], dc_y_values: NDArray[(Any), np.int32],
-                        ac_y_bits: NDArray[(Any), np.int32], ac_y_values: NDArray[(Any), np.int32],
-                        dc_c_bits: NDArray[(Any), np.int32], dc_c_values: NDArray[(Any), np.int32],
-                        ac_c_bits: NDArray[(Any), np.int32], ac_c_values: NDArray[(Any), np.int32]) -> None:
+                        dc_y_bits: NDArray[Shape["*"], np.int32], dc_y_values: NDArray[Shape["*"], np.int32],
+                        ac_y_bits: NDArray[Shape["*"], np.int32], ac_y_values: NDArray[Shape["*"], np.int32],
+                        dc_c_bits: NDArray[Shape["*"], np.int32], dc_c_values: NDArray[Shape["*"], np.int32],
+                        ac_c_bits: NDArray[Shape["*"], np.int32], ac_c_values: NDArray[Shape["*"], np.int32]) -> None:
     ly = 1 + len(dc_y_bits) + len(dc_y_values) + 1 + len(ac_y_bits) + len(ac_y_values)
     lc = 1 + len(dc_c_bits) + len(dc_c_values) + 1 + len(ac_c_bits) + len(ac_c_values)
     write_segment_marker(bw, 0xC4, 2 + ly + lc)

@@ -41,21 +41,19 @@ import sys
 import time
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
-from typing import Any
 
 import cv2
 import numpy as np
-from nptyping import NDArray
-
 from ct import ycbcr_to_rgb_bt709
 from dwt import (DwtType, inverse_cdf_9_7_dwt, inverse_haar_dwt,
                  inverse_legall_5_3_dwt)
 from entropy import code_block_size, decode_subband
 from hls import read_ips
+from nptyping import NDArray, Shape
 from quantiser import reconstruct_plane
 
 
-def swic_decoder(bitstream_file: str, levels_to_decode: int, verbose: bool = True) -> NDArray[(Any, Any, Any), np.int32]:
+def swic_decoder(bitstream_file: str, levels_to_decode: int, verbose: bool = True) -> NDArray[Shape["*, *, *"], np.int32]:
     # High level syntax parsing
     with open(bitstream_file, "rb") as fh:
         ips = read_ips(fh)

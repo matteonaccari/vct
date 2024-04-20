@@ -37,16 +37,16 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
-from typing import Any, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 from bitio import BitReader, BitWriter
-from nptyping import NDArray
+from nptyping import NDArray, Shape
 
 
-def ecgencoder(input_data: NDArray[(Any), np.int32],
-               buffer: NDArray[(Any), np.int32],
-               tolerance: int, min_match: int = 20, max_match: int = 255) -> Tuple[List[List[int]], NDArray[(Any), np.int32], int]:
+def ecgencoder(input_data: NDArray[Shape["*"], np.int32],
+               buffer: NDArray[Shape["*"], np.int32],
+               tolerance: int, min_match: int = 20, max_match: int = 255) -> Tuple[List[List[int]], NDArray[Shape["*"], np.int32], int]:
     if min_match > buffer.size:
         raise Exception(f"No dictionary based compression can be performed given that the buffer size {buffer.size} is less than min match length {min_match}")
 
@@ -103,7 +103,7 @@ def ecgencoder(input_data: NDArray[(Any), np.int32],
     return sym_bitstream, decoded, total_bits
 
 
-def match_input_in_buffer(input: NDArray[(Any), np.int32], buffer: NDArray[(Any), np.int32],
+def match_input_in_buffer(input: NDArray[Shape["*"], np.int32], buffer: NDArray[Shape["*"], np.int32],
                           tolerance: int, min_match: int) -> Tuple[int, int]:
     # Default values for position and length
     match_position, match_length, cb = -1, 0, buffer.size
@@ -127,7 +127,7 @@ def match_input_in_buffer(input: NDArray[(Any), np.int32], buffer: NDArray[(Any)
     return match_position, match_length
 
 
-def ecgdecoder(compressed_buffer: NDArray[(Any), np.uint8]) -> NDArray[(Any), np.uint8]:
+def ecgdecoder(compressed_buffer: NDArray[Shape["*"], np.uint8]) -> NDArray[Shape["*"], np.uint8]:
     match_length_bits = compressed_buffer[0] & 0x0F
     position_bits = (compressed_buffer[0] >> 4) & 0x0F
     cb = (1 << position_bits)

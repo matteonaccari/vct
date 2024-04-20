@@ -34,15 +34,14 @@ THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
 from ctypes import c_uint32
-from typing import Any
 
 import numpy as np
-from nptyping import NDArray
+from nptyping import NDArray, Shape
 
 
 class BitWriter:
-    def __init__(self, buffer: NDArray[(Any), np.uint8]) -> None:
-        self.buffer: NDArray[(Any), np.uint8] = buffer
+    def __init__(self, buffer: NDArray[Shape["*"], np.uint8]) -> None:
+        self.buffer: NDArray[Shape["*"], np.uint8] = buffer
         self.accumulator: int = 0
         self.bit_counter: int = 0
         self.bits_accumulated: int = 0
@@ -86,8 +85,8 @@ class BitWriter:
 
 
 class BitReader:
-    def __init__(self, buffer: NDArray[(Any), np.uint8]) -> None:
-        self.buffer: NDArray[(Any), np.uint8] = buffer
+    def __init__(self, buffer: NDArray[Shape["*"], np.uint8]) -> None:
+        self.buffer: NDArray[Shape["*"], np.uint8] = buffer
         self.current_ptr: int = 0
         self.capacity: int = buffer.size
         self.accumulator: int = 0

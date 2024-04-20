@@ -35,13 +35,12 @@ THE POSSIBILITY OF SUCH DAMAGE.
 
 
 import math
-from typing import Any
 
 import numpy as np
-from nptyping import NDArray
+from nptyping import NDArray, Shape
 
 
-def compute_dct_matrix(block_size: int) -> NDArray[(Any, Any), np.float64]:
+def compute_dct_matrix(block_size: int) -> NDArray[Shape["*, *"], np.float64]:
     m1, m2 = np.meshgrid(range(block_size), range(block_size))
     normaliser = np.ones((block_size, block_size), np.float64)
     normaliser[0, ::] = 1.0 / math.sqrt(block_size)
@@ -52,7 +51,7 @@ def compute_dct_matrix(block_size: int) -> NDArray[(Any, Any), np.float64]:
     return T
 
 
-def compute_dct(block: NDArray[(Any, Any), np.float64], T: NDArray[(Any, Any), np.float64]) -> NDArray[(Any, Any), np.float64]:
+def compute_dct(block: NDArray[Shape["*, *"], np.float64], T: NDArray[Shape["*, *"], np.float64]) -> NDArray[Shape["*, *"], np.float64]:
     Tt = np.transpose(T)
 
     block_t = np.matmul(T, np.matmul(block, Tt))
