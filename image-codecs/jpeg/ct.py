@@ -38,12 +38,12 @@ THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
 import numpy as np
-from nptyping import NDArray, Shape
+import numpy.typing as npt
 
 
-def rgb_to_ycbcr_bt601(red: NDArray[Shape["*, *"], np.uint8],
-                       green: NDArray[Shape["*, *"], np.uint8],
-                       blue: NDArray[Shape["*, *"], np.uint8], bpp: int = 8) -> NDArray[Shape["*, *, 3"], np.int32]:
+def rgb_to_ycbcr_bt601(red: npt.NDArray[np.uint8],
+                       green: npt.NDArray[np.uint8],
+                       blue: npt.NDArray[np.uint8], bpp: int = 8) -> npt.NDArray[np.int32]:
     max_value = (1 << bpp) - 1
     mid_range = 1 << (bpp - 1)
     red = red.astype(np.float64) / max_value
@@ -65,9 +65,9 @@ def rgb_to_ycbcr_bt601(red: NDArray[Shape["*, *"], np.uint8],
     return ycbcr_image.astype(np.int32)
 
 
-def rgb_to_ycbcr_bt709(red: NDArray[Shape["*, *"], np.uint8],
-                       green: NDArray[Shape["*, *"], np.uint8],
-                       blue: NDArray[Shape["*, *"], np.uint8], bpp: int = 8) -> NDArray[Shape["*, *, 3"], np.int32]:
+def rgb_to_ycbcr_bt709(red: npt.NDArray[np.uint8],
+                       green: npt.NDArray[np.uint8],
+                       blue: npt.NDArray[np.uint8], bpp: int = 8) -> npt.NDArray[np.int32]:
     max_value = (1 << bpp) - 1
     mid_range = 1 << (bpp - 1)
     red = red.astype(np.float64) / max_value

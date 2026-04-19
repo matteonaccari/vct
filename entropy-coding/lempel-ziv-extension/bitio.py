@@ -37,12 +37,12 @@ from ctypes import c_uint32
 from typing import List
 
 import numpy as np
-from nptyping import NDArray, Shape
+import numpy.typing as npt
 
 
 class BitReader:
-    def __init__(self, buffer: NDArray[Shape["*"], np.uint8]) -> None:
-        self.buffer: NDArray[Shape["*"], np.uint8] = buffer
+    def __init__(self, buffer: npt.NDArray[np.uint8]) -> None:
+        self.buffer: npt.NDArray[np.uint8] = buffer
         self.current_ptr: int = 0
         self.capacity: int = buffer.size
         self.accumulator: np.uint32 = 0
@@ -65,7 +65,7 @@ class BitReader:
                 break
             value |= self.accumulator << (bits - bits_remaining)
             bits_remaining -= self.bits_held
-            self.accumulator = self.buffer[self.current_ptr]
+            self.accumulator = int(self.buffer[self.current_ptr])
             self.current_ptr += 1
             self.bits_held = 8
 
@@ -75,7 +75,7 @@ class BitReader:
 class BitWriter:
     def __init__(self) -> None:
         self.buffer: List[np.uint8] = []
-        self.accumulator: np.int32 = 0
+        self.accumulator: np.uint32 = 0
         self.bits_accumulated: int = 0
         self.total_bits_written: int = 0
 
@@ -83,7 +83,7 @@ class BitWriter:
         if not 0 < bits and bits <= 32:
             raise Exception("Bits to write must be in the range [1, 32] inclusive")
 
-        self.accumulator |= c_uint32(value << self.bits_accumulated).value
+        self.accumulator |= c_uint32(np.uint32(value) << self.bits_accumulated).value
 
         if self.bits_accumulated + bits >= 32:
             for b in int(self.accumulator).to_bytes(4, byteorder='little'):
@@ -107,5 +107,5 @@ class BitWriter:
     def get_bytes_written(self) -> int:
         return (self.total_bits_written + 7) >> 3
 
-    def get_data_buffer(self) -> NDArray[Shape["*"], np.uint8]:
+    def get_data_buffer(self) -> npt.NDArray[np.uint8]:
         return np.array(self.buffer, np.uint8)

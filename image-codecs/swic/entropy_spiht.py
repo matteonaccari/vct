@@ -37,15 +37,14 @@ THE POSSIBILITY OF SUCH DAMAGE.
 from typing import List, Tuple
 
 import numpy as np
-from nptyping import NDArray, Shape
-
 from bit_io import BitReaderLimited, BitWriterAppend, EndOfParsing
+from numpy.typing import NDArray
 
 msb_bits, bytes_size = 4, 4
 
 
-def is_setA_significant(abs_image_levels: List[NDArray[Shape["*, *"], np.int32]],
-                        successor_map: NDArray[Shape["*, *, 2"], np.int32],
+def is_setA_significant(abs_image_levels: List[NDArray[np.int32]],
+                        successor_map: NDArray[np.int32],
                         row: int, col: int, threshold: int) -> bool:
     # Check all the descendants of the four offsprings
     rs, cs = successor_map[row, col]
@@ -68,8 +67,8 @@ def is_setA_significant(abs_image_levels: List[NDArray[Shape["*, *"], np.int32]]
 sb_delta = [[0, 0], [0, 1], [1, 0], [1, 1]]
 
 
-def is_setB_significant(abs_image_levels: List[NDArray[Shape["*, *"], np.int32]],
-                        successor_map: NDArray[Shape["*, *, 2"], np.int32],
+def is_setB_significant(abs_image_levels: List[NDArray[np.int32]],
+                        successor_map: NDArray[np.int32],
                         row: int, col: int, threshold: int) -> bool:
     # Check all the descendants of the descendants, i.e. the elements in set G = D - O
     rs, cs = successor_map[row, col]
@@ -96,9 +95,9 @@ def is_setB_significant(abs_image_levels: List[NDArray[Shape["*, *"], np.int32]]
     return False
 
 
-def encode_image_spiht(image_levels: List[NDArray[Shape["*, *, 3"], np.int32]],
-                       successor_map: NDArray[Shape["*, *, 2"], np.int32],
-                       decomposition_levels, components: int) -> Tuple[NDArray[Shape["3"], np.int32], NDArray[Shape["*"], np.uint8]]:
+def encode_image_spiht(image_levels: List[NDArray[np.int32]],
+                       successor_map: NDArray[np.int32],
+                       decomposition_levels, components: int) -> Tuple[NDArray[np.int32], NDArray[np.uint8]]:
     # Find the most significant bitplane for each colour component
     bp_max = np.zeros((components), np.int32)
     component_bytes, previous_size = np.zeros((components), np.int32), 0
@@ -186,7 +185,7 @@ def encode_image_spiht(image_levels: List[NDArray[Shape["*, *, 3"], np.int32]],
     return component_bytes, np.array(bwa.buffer, np.uint8)
 
 
-def compute_successor_map(height: int, width: int, decomposition_levels: int) -> NDArray[Shape["*, *, 2"], np.int32]:
+def compute_successor_map(height: int, width: int, decomposition_levels: int) -> NDArray[np.int32]:
     successor_map = -np.ones((height, width, 2), np.int32)
     rows_ll = height // (1 << decomposition_levels)
     cols_ll = width // (1 << decomposition_levels)
@@ -211,11 +210,11 @@ def compute_successor_map(height: int, width: int, decomposition_levels: int) ->
     return successor_map
 
 
-def decode_image_spiht(bitstream: NDArray[Shape["*"], np.uint8],
-                       successor_map: NDArray[Shape["*, *, 2"], np.int32],
+def decode_image_spiht(bitstream: NDArray[np.uint8],
+                       successor_map: NDArray[np.int32],
                        decomposition_levels: int, components: int,
                        bits_to_process: int,
-                       weighty: float) -> NDArray[Shape["*, *, *"], np.int32]:
+                       weighty: float) -> NDArray[np.int32]:
     rows, cols = successor_map.shape[0], successor_map.shape[1]
     image_levels = np.zeros((rows, cols, components), np.int32)
     start = 0

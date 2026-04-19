@@ -41,17 +41,16 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from nptyping import NDArray, Shape
-
 from ct import ycbcr_to_rgb_bt709
 from dwt import (DwtType, inverse_cdf_9_7_dwt, inverse_haar_dwt,
                  inverse_legall_5_3_dwt)
 from entropy_spiht import compute_successor_map, decode_image_spiht
 from hls import read_ips
+from numpy.typing import NDArray
 from quantiser import reconstruct_plane
 
 
-def swic_decoder_spiht(bitstream_file: str, levels_to_decode: int, bpp: float, weighty: float, verbose: bool = True) -> NDArray[Shape["*, *, *"], np.int32]:
+def swic_decoder_spiht(bitstream_file: str, levels_to_decode: int, bpp: float, weighty: float, verbose: bool = True) -> NDArray[np.int32]:
     # High level syntax parsing
     with open(bitstream_file, "rb") as fh:
         ips = read_ips(fh)

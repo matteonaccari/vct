@@ -37,8 +37,7 @@ THE POSSIBILITY OF SUCH DAMAGE.
 from typing import List
 
 import numpy as np
-
-from .qmutilities import Context, probability_state_machine
+from qmutilities import Context, probability_state_machine
 
 
 class QMEncoder:
@@ -125,7 +124,7 @@ class QMEncoder:
             self.m_byte_buffer[self.m_buffer_size - 1] += 1
             self._stuff0()
             self._output_stacked_zeros()
-            self.m_byte_buffer.append(np.uint8(t))
+            self.m_byte_buffer.append(t & 0xFF)
             self.m_buffer_size += 1
         else:
             if t == 0xFF:

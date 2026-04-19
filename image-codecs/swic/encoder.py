@@ -51,14 +51,14 @@ from dwt import (DwtType, forward_cdf_9_7_dwt, forward_haar_dwt,
                  inverse_legall_5_3_dwt)
 from entropy import encode_subband
 from hls import ImageParameterSet, write_ips
-from nptyping import NDArray, Shape
+from numpy.typing import NDArray
 from quantiser import quantise_plane, reconstruct_plane
 
 
-def swic_encoder(input_image: NDArray[Shape["*, *, *"], np.int32],
+def swic_encoder(input_image: NDArray[np.int32],
                  bitstream_name: str, qp: int, bitdepth: int,
                  levels: int, transform_type: DwtType,
-                 reconstruction_needed: bool) -> Tuple[int, NDArray[Shape["*, *, *"], np.int32]]:
+                 reconstruction_needed: bool) -> Tuple[int, NDArray[np.int32]]:
     # Remove mid range value from input data
     midrange_value = 1 << (bitdepth - 1)
     max_value = (1 << bitdepth) - 1

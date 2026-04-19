@@ -42,21 +42,20 @@ from typing import Tuple
 
 import cv2
 import numpy as np
-from nptyping import NDArray, Shape
-
 from ct import rgb_to_ycbcr_bt709, ycbcr_to_rgb_bt709
 from dwt import (DwtType, forward_cdf_9_7_dwt, forward_haar_dwt,
                  forward_legall_5_3_dwt, inverse_cdf_9_7_dwt, inverse_haar_dwt,
                  inverse_legall_5_3_dwt)
+from entropy import code_block_size
 from entropy_spiht import compute_successor_map, encode_image_spiht
 from hls import ImageParameterSet, write_ips
+from numpy.typing import NDArray
 from quantiser import quantise_plane, reconstruct_plane
-from entropy import code_block_size
 
 code_block_bytes = 2
 
 
-def compute_code_blocks_subbands(subbands: NDArray[Shape["*, *, *"], np.int32]) -> int:
+def compute_code_blocks_subbands(subbands: NDArray[np.int32]) -> int:
     total = 0
     for sb in subbands:
         rows, cols = sb.shape[0], sb.shape[1]
@@ -66,10 +65,10 @@ def compute_code_blocks_subbands(subbands: NDArray[Shape["*, *, *"], np.int32]) 
     return total
 
 
-def swic_encoder_spiht(input_image: NDArray[Shape["*, *, *"], np.int32],
+def swic_encoder_spiht(input_image: NDArray[np.int32],
                        bitstream_name: str, qp: int, bitdepth: int,
                        levels: int, transform_type: DwtType,
-                       reconstruction_needed: bool) -> Tuple[int, NDArray[Shape["*, *, *"], np.int32]]:
+                       reconstruction_needed: bool) -> Tuple[int, NDArray[np.int32]]:
     # Initial setup
     midrange_value = 1 << (bitdepth - 1)
     max_value = (1 << bitdepth) - 1

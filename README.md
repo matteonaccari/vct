@@ -8,7 +8,7 @@ The Video Coding Tutorial (VCT) repository provides a set of Jupyter notebooks t
  * [Quantisation](./quantisation)
  * [Image codecs](./image-codecs/)
 
-The material has been prepared with the aim to complement the theoretical foundations that can be learned from some of the classical text books on image and video compression (see below for a list of references). It is believed that seeing how the theory is put into limited, yet practical examples, readers will strengthen their understanding in the area of compression of visual data. Accordingly, along with a description and explanation on the coding tools/algorithms/methods presented, a Python implementation is also provided so that the reader can perform additional code debugging, investigations, etc. to expand their understanding in the area of image/video compression. As of April 2024 it is known to the author that some key aspects of video codecs such as inter frame prediction are still not present in this tutorial. Please bear with me: being living on planet Earth where days are only of 24 hours and needing to work to find the means the support myself, I still haven't found time to get round these key aspects of video coding. I will get there, eventually.
+The material has been prepared with the aim to complement the theoretical foundations that can be learned from some of the classical text books on image and video compression (see below for a list of references). It is believed that seeing how the theory is put into limited, yet practical examples, readers will strengthen their understanding in the area of compression of visual data. Accordingly, along with a description and explanation on the coding tools/algorithms/methods presented, a Python implementation is also provided so that the reader can perform additional code debugging, investigations, etc. to expand their understanding in the area of image/video compression. As of May 2026 it is known to the author that some key aspects of video codecs such as inter frame prediction are still not present in this tutorial. Please bear with me: being living on planet Earth where days are only of 24 hours and needing to work to find the means the support myself, I still haven't found time to get round these key aspects of video coding. I will get there, eventually.
 
 ## References
 Some good textbooks that can be used to learn the fundamentals as well as being up to date with the state-of-the-art are:
@@ -18,10 +18,29 @@ Some good textbooks that can be used to learn the fundamentals as well as being 
  * D. Bull, "Communicating pictures: A course in image and video coding", Associate Press, 560 pages, 2014.
 
 ## Installation
-The `requirements.txt` file lists all the pacakges required to use the tutorials. If using `pip`, just type the following in a command terminal window:
+The `requirements.txt` file lists all the pacakges required to use the tutorials.
+
+### MS Windows
+Type the following in a command terminal window:
 ```bash
 > pip install -r requirements.txt
 ```
+### Linux
+The best approach is to create a virtual environment to avoid that any package will interfere with the system's Python. Accordingly, type the following command to create a virtual environment in a command terminal window:
+```bash
+> python3 -m venv .venv
+```
+
+Then you would need to activate the environment `.venv` you just created:
+```bash
+> source .venv/bin/activate
+```
+
+Now your command terminal should show a `(.venv)` at the beginning, meaning that any command will stay confined to that folder. You are now in a position to install the packages for this collection of tutorials. Just type:
+```bash
+> pip install -r requirements.txt
+```
+
 
 ## License
 The copyright in this collection of software modules is being made available under the BSD

@@ -37,12 +37,12 @@ from ctypes import c_uint32
 from typing import List
 
 import numpy as np
-from nptyping import NDArray, Shape
+from numpy.typing import NDArray
 
 
 class BitWriter:
-    def __init__(self, buffer: NDArray[Shape["*"], np.uint8]) -> None:
-        self.buffer: NDArray[Shape["*"], np.uint8] = buffer
+    def __init__(self, buffer: NDArray[np.uint8]) -> None:
+        self.buffer: NDArray[np.uint8] = buffer
         self.accumulator: int = 0
         self.bit_counter: int = 0
         self.bits_accumulated: int = 0
@@ -119,8 +119,8 @@ class BitWriterAppend:
 
 
 class BitReader:
-    def __init__(self, buffer: NDArray[Shape["*"], np.uint8]) -> None:
-        self.buffer: NDArray[Shape["*"], np.uint8] = buffer
+    def __init__(self, buffer: NDArray[np.uint8]) -> None:
+        self.buffer: NDArray[np.uint8] = buffer
         self.current_ptr: int = 0
         self.capacity: int = buffer.size
         self.accumulator: int = 0
@@ -144,7 +144,7 @@ class BitReader:
                 break
             value |= self.accumulator << (bits - bits_remaining)
             bits_remaining -= self.bits_held
-            self.accumulator = self.buffer[self.current_ptr]
+            self.accumulator = int(self.buffer[self.current_ptr])
             self.current_ptr += 1
             self.bits_held = 8
 
@@ -156,8 +156,8 @@ class EndOfParsing(Exception):
 
 
 class BitReaderLimited:
-    def __init__(self, buffer: NDArray[Shape["*"], np.uint8]) -> None:
-        self.buffer: NDArray[Shape["*"], np.uint8] = buffer
+    def __init__(self, buffer: NDArray[np.uint8]) -> None:
+        self.buffer: NDArray[np.uint8] = buffer
         self.current_ptr: int = 0
         self.capacity: int = buffer.size
         self.accumulator: int = 0

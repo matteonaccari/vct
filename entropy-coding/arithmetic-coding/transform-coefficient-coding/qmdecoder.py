@@ -37,9 +37,8 @@ THE POSSIBILITY OF SUCH DAMAGE.
 from typing import List
 
 import numpy as np
-
-from .qmutilities import (Context, endOfArithmeticCodingMarker,
-                          probability_state_machine)
+from qmutilities import (Context, endOfArithmeticCodingMarker,
+                         probability_state_machine)
 
 
 class QMDecoder:

@@ -40,13 +40,13 @@ THE POSSIBILITY OF SUCH DAMAGE.
 from typing import List, Tuple
 
 import numpy as np
+import numpy.typing as npt
 from bitio import BitReader, BitWriter
-from nptyping import NDArray, Shape
 
 
-def ecgencoder(input_data: NDArray[Shape["*"], np.int32],
-               buffer: NDArray[Shape["*"], np.int32],
-               tolerance: int, min_match: int = 20, max_match: int = 255) -> Tuple[List[List[int]], NDArray[Shape["*"], np.int32], int]:
+def ecgencoder(input_data: npt.NDArray[np.int32],
+               buffer: npt.NDArray[np.int32],
+               tolerance: int, min_match: int = 20, max_match: int = 255) -> Tuple[List[List[int]], npt.NDArray[np.int32], int]:
     if min_match > buffer.size:
         raise Exception(f"No dictionary based compression can be performed given that the buffer size {buffer.size} is less than min match length {min_match}")
 
@@ -103,7 +103,7 @@ def ecgencoder(input_data: NDArray[Shape["*"], np.int32],
     return sym_bitstream, decoded, total_bits
 
 
-def match_input_in_buffer(input: NDArray[Shape["*"], np.int32], buffer: NDArray[Shape["*"], np.int32],
+def match_input_in_buffer(input: npt.NDArray[np.int32], buffer: npt.NDArray[np.int32],
                           tolerance: int, min_match: int) -> Tuple[int, int]:
     # Default values for position and length
     match_position, match_length, cb = -1, 0, buffer.size
@@ -127,9 +127,9 @@ def match_input_in_buffer(input: NDArray[Shape["*"], np.int32], buffer: NDArray[
     return match_position, match_length
 
 
-def ecgdecoder(compressed_buffer: NDArray[Shape["*"], np.uint8]) -> NDArray[Shape["*"], np.uint8]:
-    match_length_bits = compressed_buffer[0] & 0x0F
-    position_bits = (compressed_buffer[0] >> 4) & 0x0F
+def ecgdecoder(compressed_buffer: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+    match_length_bits = int(compressed_buffer[0] & 0x0F)
+    position_bits = int((compressed_buffer[0] >> 4) & 0x0F)
     cb = (1 << position_bits)
     br = BitReader(compressed_buffer[1:])
     buffer = np.zeros(cb, np.uint8)
@@ -145,8 +145,8 @@ def ecgdecoder(compressed_buffer: NDArray[Shape["*"], np.uint8]) -> NDArray[Shap
             ptr_buffer += 1
         else:
             # Position length pair
-            position = br.read(position_bits)
-            length = br.read(match_length_bits)
+            position = int(br.read(position_bits))
+            length = int(br.read(match_length_bits))
             j = position
             for _ in range(length):
                 decoded.append(buffer[j % cb])
@@ -166,12 +166,12 @@ def write_compressed_egc(compressed_data: List[List[int]], bitstream_name: str, 
         if not code_type[0]:
             # Raw value
             bw.write(0, 1)
-            bw.write(code_type[1][0], input_bits)
+            bw.write(int(code_type[1][0]), input_bits)
         else:
             # Position, length pair
             bw.write(1, 1)
-            bw.write(code_type[1][0], position_bits)
-            bw.write(code_type[1][1], match_length_bits)
+            bw.write(int(code_type[1][0]), position_bits)
+            bw.write(int(code_type[1][1]), match_length_bits)
 
     with open(bitstream_name, 'wb') as fh:
         fh.write(first_byte.to_bytes(1, 'little'))
